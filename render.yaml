@@ -17,12 +17,13 @@ services:
     region: oregon
     plan: starter
     rootDir: ./backend
+    numInstances: 1
     # https://render.com/docs/blueprint-spec#scaling
-    scaling:
-      minInstances: 1
-      maxInstances: 2
-      targetMemoryPercent: 90 # optional if targetCPUPercent is set (valid: 1-90)
-      targetCPUPercent: 90 # optional if targetMemory is set (valid: 1-90)
+    # scaling:
+    #   minInstances: 1
+    #   maxInstances: 2
+    #   targetMemoryPercent: 90 # optional if targetCPUPercent is set (valid: 1-90)
+    #   targetCPUPercent: 90 # optional if targetMemory is set (valid: 1-90)
     healthCheckPath: /api/health/
     initialDeployHook: make seed_db_based_on_env
     envVars:
