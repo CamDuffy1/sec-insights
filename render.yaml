@@ -4,7 +4,7 @@ databases:
     databaseName: llama_app_db
     # plan: pro
     # previewPlan: starter
-    plan: starter
+    plan: pro
 
 services:
   # A Docker web service
