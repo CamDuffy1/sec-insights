@@ -12,16 +12,16 @@ services:
   - type: web
     name: llama-app-backend
     runtime: docker
-    repo: https://github.com/run-llama/sec-insights.git
+    repo: https://github.com/CamDuffy1/sec-insights.git
     region: oregon
-    plan: standard
+    plan: starter
     rootDir: ./backend
     # https://render.com/docs/blueprint-spec#scaling
     scaling:
-      minInstances: 2
-      maxInstances: 10
-      targetMemoryPercent: 75 # optional if targetCPUPercent is set (valid: 1-90)
-      targetCPUPercent: 75 # optional if targetMemory is set (valid: 1-90)
+      minInstances: 1
+      maxInstances: 2
+      targetMemoryPercent: 90 # optional if targetCPUPercent is set (valid: 1-90)
+      targetCPUPercent: 90 # optional if targetMemory is set (valid: 1-90)
     healthCheckPath: /api/health/
     initialDeployHook: make seed_db_based_on_env
     envVars:
@@ -37,9 +37,9 @@ services:
   - type: cron
     name: llama-app-cron
     runtime: docker
-    repo: https://github.com/run-llama/sec-insights.git
+    repo: https://github.com/CamDuffy1/sec-insights.git
     region: oregon
-    plan: standard
+    plan: starter
     rootDir: ./backend
     # set to the fake date of Feb 31st so it never runs. Meant to be manually triggered.
     schedule: "0 5 31 2 ?"
