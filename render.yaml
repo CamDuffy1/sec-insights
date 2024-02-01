@@ -32,7 +32,7 @@ services:
           property: connectionString
       - fromGroup: general-settings
       - fromGroup: prod-web-secrets
-      - fromGroup: preview-web-secrets
+      # - fromGroup: preview-web-secrets
   # A Docker cron service
   # Runs the seed_db job which should only be upserts and otherwise idempotent
   - type: cron
