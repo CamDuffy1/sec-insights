@@ -147,6 +147,7 @@ Remember - if I have asked a relevant financial question, use your tools.
 
 {user_message.content}
         """.strip()
+        print("HELLO WORLD!!!!!!!!!!!!!!!!!!")
         streaming_chat_response: StreamingAgentChatResponse = (
             await chat_engine.astream_chat(templated_message)
         )
