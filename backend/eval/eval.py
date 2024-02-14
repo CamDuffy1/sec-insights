@@ -5,11 +5,11 @@ from eval_utils import get_trulens_recorder
 from trulens_eval import (
     Tru,
     Feedback,
-    TruLlama
-    # OpenAI
+    TruLlama,
+    OpenAI
 )
 from trulens_eval.feedback import Groundedness
-from trulens_eval.feedback.provider.openai import OpenAI
+from trulens_eval.feedback.provider.hugs import Huggingface
 
 from app.chat.engine import get_chat_engine
 from app.chat.messaging import (
@@ -46,7 +46,7 @@ def run_evals(eval_questions, tru_recorder, query_engine):
         with tru_recorder as recording:
             response = query_engine.query(question)
 
-def get_trulens_recorder(query_engine, app_id):
+def get_trulens_recorder_openai(query_engine, app_id):
     openai = OpenAI()
 
     qa_relevance = (
@@ -71,6 +71,18 @@ def get_trulens_recorder(query_engine, app_id):
     )
 
     feedbacks = [qa_relevance, qs_relevance, groundedness]
+    tru_recorder = TruLlama(
+        query_engine,
+        app_id=app_id,
+        feedbacks=feedbacks
+    )
+    return tru_recorder
+
+def get_trulens_recorder_huggingface(query_engine, app_id):
+    huggingface = Huggingface()
+    feedback = Feedback(huggingface.language_match).on_input_output()
+    feedbacks = [feedback]
+    
     tru_recorder = TruLlama(
         query_engine,
         app_id=app_id,
@@ -143,13 +155,18 @@ async def main():
     conversation = schema.Conversation(**conv_args)
     send_chan, recv_chan = anyio.create_memory_object_stream(100)
     chat_engine = await get_chat_engine(ChatCallbackHandler(send_chan), conversation)
-
-    eval_questions = get_eval_questions(file_path)
-    Tru().reset_database()
-    tru_recorder_1 = get_trulens_recorder(chat_engine, app_id="base_engine_1")
-    run_evals(eval_questions, tru_recorder_1, chat_engine)
     
-    Tru().run_dashboard()
+    # response = chat_engine.query("Tell me about the business")
+    # print(response)
+
+    # eval_questions = get_eval_questions(file_path)
+    # Tru().reset_database()
+    # # tru_recorder_1 = get_trulens_recorder_openai(chat_engine, app_id="base_engine_1")
+    # tru_recorder_1 = get_trulens_recorder_huggingface(chat_engine, app_id="base_engine_1")
+    # run_evals(eval_questions, tru_recorder_1, chat_engine)
+    
+    # Tru().run_dashboard()
+
 
 
     return
@@ -159,9 +176,7 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
     
-    # eval_questions = get_eval_questions(file_path)
-    # Tru().reset_database()
-    # tru_recorder_1 = get_trulens_recorder
+
 
 
 
