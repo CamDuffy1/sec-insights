@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
 
     try:
         # Some setup is required to initialize the llama-index sentence splitter
+        print("EXECUTING: SPLIT_BY_SENTENCE_TOKENIZER()")
         split_by_sentence_tokenizer()
     except FileExistsError:
         # Sometimes seen in deployments, should be benign.

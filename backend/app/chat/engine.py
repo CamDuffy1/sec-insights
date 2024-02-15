@@ -34,7 +34,8 @@ from llama_index.vector_stores.types import (
     MetadataFilters,
     ExactMatchFilter,
 )
-from llama_index.node_parser import SentenceSplitter
+# from llama_index.node_parser import SentenceSplitter
+from llama_index.node_parser import SentenceWindowNodeParser
 from app.core.config import settings
 from app.schema import (
     Message as MessageSchema,
@@ -226,10 +227,16 @@ def get_tool_service_context(
         model_type=OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002,
         api_key=settings.OPENAI_API_KEY,
     )
-    # Use a smaller chunk size to retrieve more granular results
-    node_parser = SentenceSplitter.from_defaults(
-        chunk_size=NODE_PARSER_CHUNK_SIZE,
-        chunk_overlap=NODE_PARSER_CHUNK_OVERLAP,
+    # # Use a smaller chunk size to retrieve more granular results
+    # node_parser = SentenceSplitter.from_defaults(
+    #     chunk_size=NODE_PARSER_CHUNK_SIZE,
+    #     chunk_overlap=NODE_PARSER_CHUNK_OVERLAP,
+    #     callback_manager=callback_manager,
+    # )
+    node_parser = SentenceWindowNodeParser.from_defaults(
+        window_size=3,
+        window_metadata_key="window",
+        original_text_metadata_key="original_text",
         callback_manager=callback_manager,
     )
     service_context = ServiceContext.from_defaults(
