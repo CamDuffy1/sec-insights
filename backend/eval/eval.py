@@ -179,7 +179,7 @@ def get_dummy_doc():
 
 async def main():
     
-    # doc = get_document_via_api(document_id="4d24de4e-63ee-4af5-9c97-ccae008ad887")
+    # doc = get_document_via_api(document_id="3fd236ff-fe71-43ca-ac36-df83b666e020")
     doc = get_dummy_doc()
     conv_args = {
         "messages": [],
@@ -189,10 +189,14 @@ async def main():
     send_chan, recv_chan = anyio.create_memory_object_stream(100)
     chat_engine = await get_chat_engine(ChatCallbackHandler(send_chan), conversation)
     
-    response = chat_engine.query("Tell me about the business")
-    print(response)
+    # response = chat_engine.query("Tell me about the business")
+    # print(response)
 
-    # eval_questions = get_eval_questions(file_path)
+    eval_questions = get_eval_questions(file_path)
+    for question in eval_questions[:2]:
+        response = chat_engine.query(question)
+        print(response)
+
     # Tru().reset_database()
     # # tru_recorder_1 = get_trulens_recorder_openai(chat_engine, app_id="base_engine_1")
     # tru_recorder_1 = get_trulens_recorder_huggingface(chat_engine, app_id="base_engine_1")

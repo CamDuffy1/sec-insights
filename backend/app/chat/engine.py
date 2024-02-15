@@ -36,6 +36,9 @@ from llama_index.vector_stores.types import (
 )
 # from llama_index.node_parser import SentenceSplitter
 from llama_index.node_parser import SentenceWindowNodeParser
+from llama_index.indices.postprocessor import MetadataReplacementPostProcessor
+from llama_index.indices.postprocessor import SentenceTransformerRerank
+
 from app.core.config import settings
 from app.schema import (
     Message as MessageSchema,
@@ -115,7 +118,14 @@ def index_to_query_engine(doc_id: str, index: VectorStoreIndex) -> BaseQueryEngi
     filters = MetadataFilters(
         filters=[ExactMatchFilter(key=DB_DOC_ID_KEY, value=doc_id)]
     )
-    kwargs = {"similarity_top_k": 3, "filters": filters}
+    postproc = MetadataReplacementPostProcessor(
+        target_metadata_key="window"
+    )
+    rerank = SentenceTransformerRerank(
+        model="cross-encoder/ms-marco-MiniLM-L-2-v2",
+        top_n=2
+    )
+    kwargs = {"similarity_top_k": 6, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
     return index.as_query_engine(**kwargs)
 
 
