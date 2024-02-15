@@ -17,6 +17,7 @@ import nest_asyncio
 from datetime import timedelta
 from cachetools import cached, TTLCache
 from llama_index.readers.file.docs_reader import PDFReader
+from llama_index import SimpleDirectoryReader
 from llama_index.schema import Document as LlamaIndexDocument
 from llama_index.agent import OpenAIAgent
 from llama_index.llms import ChatMessage, OpenAI
@@ -38,6 +39,7 @@ from llama_index.vector_stores.types import (
 from llama_index.node_parser import SentenceWindowNodeParser
 from llama_index.indices.postprocessor import MetadataReplacementPostProcessor
 from llama_index.indices.postprocessor import SentenceTransformerRerank
+import sys
 
 from app.core.config import settings
 from app.schema import (
@@ -81,11 +83,31 @@ def get_s3_fs() -> AsyncFileSystem:
     return s3
 
 
+# def fetch_and_read_document(
+#     document: DocumentSchema,
+# ) -> List[LlamaIndexDocument]:
+#     # Super hacky approach to get this to feature complete on time.
+#     # TODO: Come up with better abstractions for this and the other methods in this module.
+#     with TemporaryDirectory() as temp_dir:
+#         temp_file_path = Path(temp_dir) / f"{str(document.id)}.pdf"
+#         with open(temp_file_path, "wb") as temp_file:
+#             with requests.get(document.url, stream=True) as r:
+#                 r.raise_for_status()
+#                 for chunk in r.iter_content(chunk_size=8192):
+#                     temp_file.write(chunk)
+#             temp_file.seek(0)
+#             reader = PDFReader()
+#             return reader.load_data(
+#                 temp_file_path, extra_info={DB_DOC_ID_KEY: str(document.id)}
+#             )
+        
 def fetch_and_read_document(
     document: DocumentSchema,
 ) -> List[LlamaIndexDocument]:
-    # Super hacky approach to get this to feature complete on time.
-    # TODO: Come up with better abstractions for this and the other methods in this module.
+    '''
+    Updated the function to merge a list of documents into a single LlamaIndex Document object,
+    as this helps with overall text blending when useing advanced retrieval methods (e.g., setence-window retrieval, auto-merging)
+    '''
     with TemporaryDirectory() as temp_dir:
         temp_file_path = Path(temp_dir) / f"{str(document.id)}.pdf"
         with open(temp_file_path, "wb") as temp_file:
@@ -94,10 +116,16 @@ def fetch_and_read_document(
                 for chunk in r.iter_content(chunk_size=8192):
                     temp_file.write(chunk)
             temp_file.seek(0)
-            reader = PDFReader()
-            return reader.load_data(
-                temp_file_path, extra_info={DB_DOC_ID_KEY: str(document.id)}
-            )
+
+            documents = SimpleDirectoryReader(
+                input_files=[temp_file_path],
+            ).load_data()
+
+        print(f"MERGING DOCUMENT: {document.metadata_map['sec_document']['company_ticker']} {document.metadata_map['sec_document']['doc_type']} {document.metadata_map['sec_document']['year']}")
+        merged_document = LlamaIndexDocument(text="\n\n".join([doc.text for doc in documents]), extra_info={DB_DOC_ID_KEY: str(document.id)})
+
+        return [merged_document]    # Return a single merged document within a list, for compatibility with pre-existing code
+          
 
 
 def build_description_for_document(document: DocumentSchema) -> str:
