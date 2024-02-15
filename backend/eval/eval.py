@@ -1,7 +1,6 @@
 import os
 import asyncio
 import numpy as np
-from eval_utils import get_trulens_recorder
 from trulens_eval import (
     Tru,
     Feedback,
@@ -144,10 +143,44 @@ def get_document_via_api(document_id):
     doc = schema.Document(**doc_args)
     return doc
 
+def get_dummy_doc():
+    """
+    This function is created as a workaround to the breaking changes to the FAST API component
+    caused by the upgrade from Pydantic V1 -> V2.
+    It uses the information about an SEC document that could be retrieved from the app's FAST API docs
+    before the breaking change.
+    Run this function after setting up localstack, seeding the local db, and migrating the db.
+
+    Retruns:
+        A Pydantic Document schema object that can be used to create a conversation and run the query engine against.
+    """
+    doc_args = {
+        "id": "4d24de4e-63ee-4af5-9c97-ccae008ad887",
+        "created_at": "2024-02-13T03:56:11.322253",
+        "updated_at": "2024-02-13T03:56:11.322253",
+        "url": "http://llama-app-web-assets-local.s3-website.localhost.localstack.cloud:4566/sec-edgar-filings/0001326801/10-K/0001326801-23-000013/primary-document.pdf",
+        "metadata_map":  {
+            "sec_document": {
+                "cik": "0001326801",
+                "year": 2022,
+                "doc_type": "10-K",
+                "company_name": "Meta Platforms, Inc.",
+                "company_ticker": "META",
+                "accession_number": "0001326801-23-000013",
+                "filed_as_of_date": "2023-02-02T00:00:00",
+                "date_as_of_change": "2023-02-01T00:00:00",
+                "period_of_report_date": "2022-12-31T00:00:00"
+            }
+        }
+    }
+    doc = schema.Document(**doc_args)
+    return doc
+
 
 async def main():
     
-    doc = get_document_via_api(document_id="4d24de4e-63ee-4af5-9c97-ccae008ad887")
+    # doc = get_document_via_api(document_id="4d24de4e-63ee-4af5-9c97-ccae008ad887")
+    doc = get_dummy_doc()
     conv_args = {
         "messages": [],
         "documents": [doc]
@@ -156,8 +189,8 @@ async def main():
     send_chan, recv_chan = anyio.create_memory_object_stream(100)
     chat_engine = await get_chat_engine(ChatCallbackHandler(send_chan), conversation)
     
-    # response = chat_engine.query("Tell me about the business")
-    # print(response)
+    response = chat_engine.query("Tell me about the business")
+    print(response)
 
     # eval_questions = get_eval_questions(file_path)
     # Tru().reset_database()
