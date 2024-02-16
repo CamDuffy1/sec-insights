@@ -1,0 +1,26 @@
+{
+    "queries": {
+        "da766423-04fe-4eb3-8460-d8b4eb21e87b": "What was the decision issued by the Luxembourg National Commission for Data Protection against Amazon Europe Core S.\u00e0 r.l. in July 2021?",
+        "2b76166d-7ee7-4f89-90bf-4e001e87e37c": "Which organization issued the decision against Amazon Europe Core S.\u00e0 r.l. and what is the significance of this decision in relation to data protection?",
+        "3decb3cf-944b-4e34-bf0b-2a1f5ef08150": "What is the total value of assets included in the \"Inventories\" category on the consolidated balance sheets as of December 31, 2021?",
+        "0115e917-26f8-4e3f-8874-71523c7aa44b": "How are the assets included in the \"Inventories\" category related to the company's liabilities for return allowances?",
+        "f9019b6e-3951-42c6-b9ef-d1b41f38ef15": "How does the company record volume rebates when they can be reasonably estimated?",
+        "7b2213fd-e7b9-4d3c-b932-acf370971511": "What is the purpose of recording a portion of the rebate as the company makes progress towards the purchase threshold?",
+        "ca3671a4-33d4-49c6-9d82-5d48356257b4": "How do measures of free cash flows differ from other financial indicators, such as debt reduction and business acquisitions?",
+        "d182a402-e257-4a6b-a488-bbf4291e4ab1": "Why is it important to consider the portion of payments representing principal reductions of debt and cash payments for business acquisitions when analyzing free cash flows?",
+        "c93d4482-4500-4fbb-bec7-402d4454c7c0": "How are fluctuations in fair value recorded in the financial statements?",
+        "6dc4fc9d-9ede-439f-80a6-81ff40969318": "Where are these fluctuations in fair value reported within the stockholders' equity section of the balance sheet?"
+    },
+    "responses": {
+        "da766423-04fe-4eb3-8460-d8b4eb21e87b": "The decision issued by the Luxembourg National Commission for Data Protection against Amazon Europe Core S.\u00e0 r.l. in July 2021 is not provided in the given context information.",
+        "2b76166d-7ee7-4f89-90bf-4e001e87e37c": "The organization that issued the decision against Amazon Europe Core S.\u00e0 r.l. is the Luxembourg National Commission for Data Protection (CNPD). The significance of this decision in relation to data protection is not provided in the given context information.",
+        "3decb3cf-944b-4e34-bf0b-2a1f5ef08150": "The total value of assets included in the \"Inventories\" category on the consolidated balance sheets as of December 31, 2021 is $882 million.",
+        "0115e917-26f8-4e3f-8874-71523c7aa44b": "The assets included in the \"Inventories\" category are associated with the company's liabilities for return allowances.",
+        "f9019b6e-3951-42c6-b9ef-d1b41f38ef15": "The company records a portion of the volume rebates as they make progress towards the purchase threshold.",
+        "7b2213fd-e7b9-4d3c-b932-acf370971511": "The purpose of recording a portion of the rebate as the company makes progress towards the purchase threshold is to accurately reflect the financial impact of the rebate on the company's financial statements.",
+        "ca3671a4-33d4-49c6-9d82-5d48356257b4": "Measures of free cash flows differ from other financial indicators, such as debt reduction and business acquisitions, because they do not incorporate the portion of payments representing principal reductions of debt or cash payments for business acquisitions.",
+        "d182a402-e257-4a6b-a488-bbf4291e4ab1": "It is important to consider the portion of payments representing principal reductions of debt and cash payments for business acquisitions when analyzing free cash flows because these payments directly impact the company's financial position. Principal reductions of debt reduce the company's liabilities and improve its financial health. Cash payments for business acquisitions represent investments in expanding the company's operations and can affect its future growth potential. Therefore, excluding these payments from the analysis of free cash flows would provide an incomplete picture of the company's financial performance and its ability to generate cash.",
+        "c93d4482-4500-4fbb-bec7-402d4454c7c0": "Fluctuations in fair value are recorded in \"Accumulated other comprehensive income (loss),\" which is a separate component of stockholders' equity.",
+        "6dc4fc9d-9ede-439f-80a6-81ff40969318": "These fluctuations in fair value are reported in the \"Accumulated other comprehensive income (loss)\" section of the stockholders' equity."
+    }
+}

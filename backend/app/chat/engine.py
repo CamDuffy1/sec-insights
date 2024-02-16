@@ -264,6 +264,7 @@ def get_chat_history(
 
 def get_tool_service_context(
     callback_handlers: List[BaseCallbackHandler],
+    return_node_parser: bool = False
 ) -> ServiceContext:
     llm = OpenAI(
         temperature=0,
@@ -295,6 +296,11 @@ def get_tool_service_context(
         embed_model=embedding_model,
         node_parser=node_parser,
     )
+
+    # Adding capability to return the node parser so it can be used in eval script
+    if return_node_parser:
+        return node_parser
+
     return service_context
 
 

@@ -1,14 +1,38 @@
+import os
+import numpy as np
 import asyncio
-from app.chat.engine import get_chat_engine
+from app.chat.engine import get_chat_engine, get_tool_service_context, fetch_and_read_document, index_to_query_engine
 from app.chat.messaging import ChatCallbackHandler
 from app import schema
 import requests
 import anyio
-# from app.api.deps import get_db
-# from llama_index.callbacks.base import BaseCallbackHandler, CallbackManager
-
+from typing import List
 from llama_index.schema import Document as LlamaIndexDocument
+from llama_index.schema import TextNode
+from llama_index import ServiceContext
+from llama_index.node_parser.text.sentence_window import SentenceWindowNodeParser
 from llama_index.response.schema import Response
+import nest_asyncio
+from tqdm.asyncio import tqdm_asyncio
+import random
+from llama_index.evaluation import (
+    DatasetGenerator,
+    QueryResponseDataset,
+    CorrectnessEvaluator,
+    SemanticSimilarityEvaluator,
+    RelevancyEvaluator,
+    FaithfulnessEvaluator,
+    PairwiseComparisonEvaluator,
+    BatchEvalRunner
+)
+from llama_index.evaluation.eval_utils import (
+    get_responses,
+    get_results_df
+)
+from collections import defaultdict
+import pandas as pd
+from llama_index.llms.openai import OpenAI
+
 
 def create_conversation_via_api(document_ids):
     '''
@@ -109,8 +133,8 @@ def pprint_sentence_window(response: Response, node: int = None) -> None:
     '''
     Function to pretty print the setence-window context vs the original setence retrieved.
     Args:
-        response: llama_index.response.schema.Response object
-        node [int]: The node to print sentence-window vs original sentence for. Use when only want to print for a single node.
+        response (Resonse): llama_index.response.schema.Response object
+        node (int): The node to print sentence-window vs original sentence for. Use when only want to print for a single node.
     Returns: None
     '''
     if node != None:
@@ -130,6 +154,64 @@ def pprint_sentence_window(response: Response, node: int = None) -> None:
             print("------------------")
             print(f"ORIGINAL SENTENCE: {sentence}")
 
+def get_nodes(document: LlamaIndexDocument, node_parser: SentenceWindowNodeParser):
+
+    document = fetch_and_read_document(document)
+    nodes = node_parser.get_nodes_from_documents(document)
+
+    '''Code to get some visibility into nodes'''
+    # print(f"Total nodes: {len(nodes)}")
+    # for i in range(800, 830):
+    #     print(f"NODE {i} TEXT: {format_pdf_text(nodes[i].text)}")
+    #     print(f"NODE {i} WINDOW: {format_pdf_text(nodes[i].metadata.get('window'))}")
+
+    return nodes
+
+async def generate_dataset(nodes: List[TextNode], service_context: ServiceContext, num_nodes_eval: int = 2, file_path: str = '/workspaces/sec-insights/backend/eval/eval_dataset.json') -> QueryResponseDataset:
+    '''
+    Generate a dataset to be used for evaluation.
+    Check if dataset already exists at file_path. If not, generate it and save it there so it does not
+    need to be generated again.
+    Args:
+        nodes (List[TextNode]): Text nodes from the document being used for evaluation.
+        service_context (ServiceContext): The LlamaIndex Service Context to use to generate questions from nodes for the evaluation dataset.
+        num_nodes_eval (int): The number of nodes (randomly sampled from total nodes) to use for generating evaluation questions.
+        file_path (str): The path to save the evaluation dataset file so it does not have to be created again.
+    Returns:
+        The QueryResponseDataset object of the evaluation dataset.
+    '''
+    if not os.path.exists(file_path):
+        sample_eval_nodes = random.sample(nodes[500:1500], num_nodes_eval)
+
+        dataset_generator = DatasetGenerator(
+            nodes=sample_eval_nodes,
+            # llm=OpenAI(model="gpt-4"),
+            service_context=service_context,
+            num_questions_per_chunk=2,
+            show_progress=True,
+        )
+        eval_dataset = await dataset_generator.agenerate_dataset_from_nodes()
+        eval_dataset.save_json("/workspaces/sec-insights/backend/eval/eval_dataset.json")
+        print(f"Saved evaluation dataset at: {file_path}")
+    else:
+        print(f"Evaluation dataset already exists at: {file_path}")
+        eval_dataset = QueryResponseDataset.from_json(file_path)
+    return eval_dataset
+
+def evaluate(document: LlamaIndexDocument, service_context: ServiceContext, eval_dataset: QueryResponseDataset, max_samples: int = 2):
+    evaluator_c = CorrectnessEvaluator()
+    # evaluator_s = SemanticSimilarityEvaluator()
+    # evaluator_r = RelevancyEvaluator(llm=OpenAI(model="gpt-4"))
+    # evaluator_f = FaithfulnessEvaluator(llm=OpenAI(model="gpt-4"))
+    # pairwise_evaluator = PairwiseComparisonEvaluator(llm=OpenAI(model="gpt-4"))
+
+    eval_qs = eval_dataset.questions
+    ref_response_strs = [r for (_, r) in eval_dataset.qr_pairs]
+
+    doc_id = document.id
+
+    sentence_index = index_to_query_engine(doc_id)
+
 
 async def main():
     
@@ -141,13 +223,31 @@ async def main():
     }
     conversation = schema.Conversation(**conv_args)
     send_chan, recv_chan = anyio.create_memory_object_stream(100)
-    chat_engine = await get_chat_engine(ChatCallbackHandler(send_chan), conversation)
+    callback_handler = ChatCallbackHandler(send_chan)
+    # chat_engine = await get_chat_engine(callback_handler, conversation)
     
-    response = chat_engine.query("Tell me about the company's finances")
+    # response = chat_engine.query("Tell me about the company's finances")
     # response = chat_engine.query("Tell me about the company's management")
-    print(f"################## FINAL RESPONSE ##################\n{response}\n")
+    # print(f"################## FINAL RESPONSE ##################\n{response}\n")
     # pprint_sentence_window(response, node=4)
 
+    node_parser = get_tool_service_context(callback_handlers=[callback_handler], return_node_parser=True)
+    nodes = get_nodes(doc, node_parser)
+
+    service_context = get_tool_service_context(callback_handlers=[callback_handler])
+    eval_dataset = await generate_dataset(
+        file_path="/workspaces/sec-insights/backend/eval/eval_dataset.json",
+        nodes=nodes,
+        num_nodes_eval=5,
+        service_context=service_context,
+    )
+    
+    evaluate(
+        document=doc,
+        service_context=service_context,
+        eval_dataset=eval_dataset,
+
+    )
 
 
     return
@@ -157,7 +257,7 @@ async def main():
 if __name__ == "__main__":
 
     asyncio.run(main())
-
+    # nest_asyncio.apply()
 
 
 
