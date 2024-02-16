@@ -199,7 +199,8 @@ async def main():
     send_chan, recv_chan = anyio.create_memory_object_stream(100)
     chat_engine = await get_chat_engine(ChatCallbackHandler(send_chan), conversation)
     
-    response = chat_engine.query("Tell me about the business")
+    # response = chat_engine.query("Tell me about the company's finances")
+    response = chat_engine.query("Tell me about the company's management")
     print(response)
 
     # eval_questions = get_eval_questions(file_path)
@@ -221,9 +222,13 @@ async def main():
 
 
 if __name__ == "__main__":
+
     asyncio.run(main())
 
     # doc = get_document_via_api(document_id="fbadfd55-17e5-4d67-a6a1-cfe00043c7a0")
+    # print(doc)
+
+
     # print(doc.metadata_map['sec_document']['company_ticker'])
     # print(type(doc.metadata_map['sec_document']['company_ticker']))
     # print(f"MERGING DOCUMENT: {doc.metadata_map['sec_document']['company_ticker']} {doc.metadata_map['sec_document']['doc_type']} {doc.metadata_map['sec_document']['year']}")

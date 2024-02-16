@@ -117,9 +117,16 @@ def fetch_and_read_document(
                     temp_file.write(chunk)
             temp_file.seek(0)
 
+            print(f"LOADING DOCUMENT WITH SimpleDirectoryReader: {document.metadata_map['sec_document']['company_ticker']} {document.metadata_map['sec_document']['doc_type']} {document.metadata_map['sec_document']['year']}")
             documents = SimpleDirectoryReader(
                 input_files=[temp_file_path],
             ).load_data()
+
+            # reader = PDFReader()
+            # print(f"LOADING DOCUMENT WITH PDFReader: {document.metadata_map['sec_document']['company_ticker']} {document.metadata_map['sec_document']['doc_type']} {document.metadata_map['sec_document']['year']}")
+            # documents = reader.load_data(
+            #     temp_file_path, extra_info={DB_DOC_ID_KEY: str(document.id)}
+            # )
 
         print(f"MERGING DOCUMENT: {document.metadata_map['sec_document']['company_ticker']} {document.metadata_map['sec_document']['doc_type']} {document.metadata_map['sec_document']['year']}")
         merged_document = LlamaIndexDocument(text="\n\n".join([doc.text for doc in documents]), extra_info={DB_DOC_ID_KEY: str(document.id)})
@@ -143,6 +150,11 @@ def build_description_for_document(document: DocumentSchema) -> str:
 
 
 def index_to_query_engine(doc_id: str, index: VectorStoreIndex) -> BaseQueryEngine:
+    '''
+    top_n=4 & similarity_top_k=8 observed to give better results than 
+    top_n=6 & similarity_top_k=6
+    i.e., Less often saw response like "could not find relevant context"
+    '''
     filters = MetadataFilters(
         filters=[ExactMatchFilter(key=DB_DOC_ID_KEY, value=doc_id)]
     )
@@ -151,9 +163,9 @@ def index_to_query_engine(doc_id: str, index: VectorStoreIndex) -> BaseQueryEngi
     )
     rerank = SentenceTransformerRerank(
         model="cross-encoder/ms-marco-MiniLM-L-2-v2",
-        top_n=2
+        top_n=4
     )
-    kwargs = {"similarity_top_k": 6, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
+    kwargs = {"similarity_top_k": 8, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
     return index.as_query_engine(**kwargs)
 
 
