@@ -51,15 +51,6 @@ class Citation(BaseMetadataObject):
     @classmethod
     def from_node(cls, node_w_score: NodeWithScore) -> "Citation":
         node: BaseNode = node_w_score.node
-
-        print(f"NODE: {node.source_node}")
-        # print(f"NODE TEXT: {node.get_content()}")
-        # print(f"TYPE(NODE TEXT): {type(node.get_content())}")
-        print(f"LEN(NODE TEXT): {len(node.get_content())}")
-        # print(f"NODE METADATA: {node.source_node.metadata}")
-        print(f"NODE SCORE: {node_w_score.score}")          
-        print()
-
         # page_number = int(node.source_node.metadata["page_label"])
         document_id = node.source_node.metadata[DB_DOC_ID_KEY]
         return cls(

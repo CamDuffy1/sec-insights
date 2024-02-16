@@ -1,100 +1,14 @@
-import os
 import asyncio
-import numpy as np
-# from trulens_eval import (
-#     Tru,
-#     Feedback,
-#     TruLlama,
-#     OpenAI
-# )
-# from trulens_eval.feedback import Groundedness
-# from trulens_eval.feedback.provider.hugs import Huggingface
-
 from app.chat.engine import get_chat_engine
-from app.chat.messaging import (
-    StreamedMessage,
-    StreamedMessageSubProcess,
-    ChatCallbackHandler,
-    handle_chat_message
-)
-from app.api.endpoints.conversation import (
-    create_conversation,
-    get_conversation
-)
+from app.chat.messaging import ChatCallbackHandler
 from app import schema
 import requests
-from app.api.deps import get_db
-from llama_index.callbacks.base import BaseCallbackHandler, CallbackManager
 import anyio
-import requests
-from llama_index import SimpleDirectoryReader
-from llama_index.readers.file.docs_reader import PDFReader
-from tempfile import TemporaryDirectory
-from pathlib import Path
-from app.chat.constants import DB_DOC_ID_KEY
+# from app.api.deps import get_db
+# from llama_index.callbacks.base import BaseCallbackHandler, CallbackManager
+
 from llama_index.schema import Document as LlamaIndexDocument
-
-
-# absolute path of text file containing questions for evaluation
-file_path = '/workspaces/sec-insights/backend/eval/eval_questions.txt'
-
-def get_eval_questions(file_path):
-    eval_questions = []
-    with open(file_path, 'r') as file:
-        for line in file:
-            # Remove newline character and convert to integer
-            item = line.strip()
-            eval_questions.append(item)
-    return eval_questions
-
-def run_evals(eval_questions, tru_recorder, query_engine):
-    for question in eval_questions:
-        with tru_recorder as recording:
-            response = query_engine.query(question)
-
-def get_trulens_recorder_openai(query_engine, app_id):
-    openai = OpenAI()
-
-    qa_relevance = (
-        Feedback(openai.relevance_with_cot_reasons, name="Answer Relevance")
-        .on_input_output()
-    )
-
-    qs_relevance = (
-        Feedback(openai.relevance_with_cot_reasons, name = "Context Relevance")
-        .on_input()
-        .on(TruLlama.select_source_nodes().node.text)
-        .aggregate(np.mean)
-    )
-
-    grounded = Groundedness(groundedness_provider=openai)
-
-    groundedness = (
-        Feedback(grounded.groundedness_measure_with_cot_reasons, name="Groundedness")
-            .on(TruLlama.select_source_nodes().node.text)
-            .on_output()
-            .aggregate(grounded.grounded_statements_aggregator)
-    )
-
-    feedbacks = [qa_relevance, qs_relevance, groundedness]
-    tru_recorder = TruLlama(
-        query_engine,
-        app_id=app_id,
-        feedbacks=feedbacks
-    )
-    return tru_recorder
-
-def get_trulens_recorder_huggingface(query_engine, app_id):
-    huggingface = Huggingface()
-    feedback = Feedback(huggingface.language_match).on_input_output()
-    feedbacks = [feedback]
-    
-    tru_recorder = TruLlama(
-        query_engine,
-        app_id=app_id,
-        feedbacks=feedbacks
-    )
-    return tru_recorder
+from llama_index.response.schema import Response
 
 def create_conversation_via_api(document_ids):
     '''
@@ -183,8 +97,38 @@ def get_dummy_doc():
     doc = schema.Document(**doc_args)
     return doc
 
+def format_pdf_text(text):
+    # Replace tabs and multiple new lines with a single space
+    if text != None:
+        text = text.replace("\t", " ")
+        text = text.replace("\n", " ")
+        text = " ".join(text.split())
+    return text
 
-
+def pprint_sentence_window(response: Response, node: int = None) -> None:
+    '''
+    Function to pretty print the setence-window context vs the original setence retrieved.
+    Args:
+        response: llama_index.response.schema.Response object
+        node [int]: The node to print sentence-window vs original sentence for. Use when only want to print for a single node.
+    Returns: None
+    '''
+    if node != None:
+        print(f"################## SOURCE NODE {node} ##################")
+        window = format_pdf_text(response.source_nodes[node].node.metadata.get("window"))
+        sentence = format_pdf_text(response.source_nodes[node].node.metadata.get("original_text"))
+        print(f"WINDOW: {window}")
+        print("------------------")
+        print(f"ORIGINAL SENTENCE: {sentence}")
+        return
+    else:
+        for i in range(len(response.source_nodes)):
+            print(f"\n################## SOURCE NODE {i+1} ##################")
+            window = format_pdf_text(response.source_nodes[i].node.metadata.get("window"))
+            sentence = format_pdf_text(response.source_nodes[i].node.metadata.get("original_text"))
+            print(f"WINDOW: {window}")
+            print("------------------")
+            print(f"ORIGINAL SENTENCE: {sentence}")
 
 
 async def main():
@@ -199,21 +143,10 @@ async def main():
     send_chan, recv_chan = anyio.create_memory_object_stream(100)
     chat_engine = await get_chat_engine(ChatCallbackHandler(send_chan), conversation)
     
-    # response = chat_engine.query("Tell me about the company's finances")
-    response = chat_engine.query("Tell me about the company's management")
-    print(response)
-
-    # eval_questions = get_eval_questions(file_path)
-    # for question in eval_questions[:2]:
-    #     response = chat_engine.query(question)
-    #     print(response)
-
-    # Tru().reset_database()
-    # # tru_recorder_1 = get_trulens_recorder_openai(chat_engine, app_id="base_engine_1")
-    # tru_recorder_1 = get_trulens_recorder_huggingface(chat_engine, app_id="base_engine_1")
-    # run_evals(eval_questions, tru_recorder_1, chat_engine)
-    
-    # Tru().run_dashboard()
+    response = chat_engine.query("Tell me about the company's finances")
+    # response = chat_engine.query("Tell me about the company's management")
+    print(f"################## FINAL RESPONSE ##################\n{response}\n")
+    # pprint_sentence_window(response, node=4)
 
 
 
@@ -224,44 +157,6 @@ async def main():
 if __name__ == "__main__":
 
     asyncio.run(main())
-
-    # doc = get_document_via_api(document_id="fbadfd55-17e5-4d67-a6a1-cfe00043c7a0")
-    # print(doc)
-
-
-    # print(doc.metadata_map['sec_document']['company_ticker'])
-    # print(type(doc.metadata_map['sec_document']['company_ticker']))
-    # print(f"MERGING DOCUMENT: {doc.metadata_map['sec_document']['company_ticker']} {doc.metadata_map['sec_document']['doc_type']} {doc.metadata_map['sec_document']['year']}")
-    # response = requests.get(doc.url)
-    # with TemporaryDirectory() as temp_dir:
-    #     temp_file_path = Path(temp_dir) / f"{str(doc.id)}.pdf"
-    #     with open(temp_file_path, "wb") as temp_file:
-    #         temp_file.write(response.content)
-    
-    #     documents = SimpleDirectoryReader(
-    #         input_files=[temp_file_path],
-    #     ).load_data()
-            
-        # reader = PDFReader()
-        # documents = reader.load_data(
-        #     temp_file_path, extra_info={DB_DOC_ID_KEY: str(doc.id)}
-        # )
-
-    # merged_document = LlamaIndexDocument(text="\n\n".join([doc.text for doc in documents]), extra_info={DB_DOC_ID_KEY: str(doc.id)})
-
-    # print("\n\nAfter document merging:")
-    # print(type(merged_document), "\n")
-    # print(merged_document.extra_info)
-
-    
-
-
-
-    
-
-
-
-
 
 
 
