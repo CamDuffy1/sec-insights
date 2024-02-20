@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import asyncio
-from app.chat.engine import get_chat_engine, get_tool_service_context, fetch_and_read_document, index_to_query_engine
+from app.chat.engine import get_chat_engine, get_tool_service_context, fetch_and_read_document, index_to_query_engine, build_doc_id_to_index_map
 from app.chat.messaging import ChatCallbackHandler
 from app import schema
 import requests
@@ -12,6 +12,8 @@ from llama_index.schema import TextNode
 from llama_index import ServiceContext
 from llama_index.node_parser.text.sentence_window import SentenceWindowNodeParser
 from llama_index.response.schema import Response
+from llama_index.indices.vector_store.base import VectorStoreIndex
+from llama_index.indices.postprocessor import MetadataReplacementPostProcessor
 import nest_asyncio
 from tqdm.asyncio import tqdm_asyncio
 import random
@@ -31,6 +33,7 @@ from llama_index.evaluation.eval_utils import (
 )
 from collections import defaultdict
 import pandas as pd
+# from IPython.display import display
 from llama_index.llms.openai import OpenAI
 
 
@@ -198,7 +201,7 @@ async def generate_dataset(nodes: List[TextNode], service_context: ServiceContex
         eval_dataset = QueryResponseDataset.from_json(file_path)
     return eval_dataset
 
-def evaluate(document: LlamaIndexDocument, service_context: ServiceContext, eval_dataset: QueryResponseDataset, max_samples: int = 2):
+async def evaluate(index: VectorStoreIndex, eval_dataset: QueryResponseDataset, max_samples: int = 2):
     evaluator_c = CorrectnessEvaluator()
     # evaluator_s = SemanticSimilarityEvaluator()
     # evaluator_r = RelevancyEvaluator(llm=OpenAI(model="gpt-4"))
@@ -208,9 +211,45 @@ def evaluate(document: LlamaIndexDocument, service_context: ServiceContext, eval
     eval_qs = eval_dataset.questions
     ref_response_strs = [r for (_, r) in eval_dataset.qr_pairs]
 
-    doc_id = document.id
+    query_engine = index.as_query_engine(
+        similarity_top_k=2,
+        node_postprocessors=[
+            MetadataReplacementPostProcessor(target_metadata_key="window")
+        ],
+    )
 
-    sentence_index = index_to_query_engine(doc_id)
+    pred_responses = get_responses(
+        eval_qs[:max_samples], query_engine, show_progress=True
+    )
+    pred_response_strs = [str(p) for p in pred_responses]
+
+    evaluator_dict = {
+        "correctness": evaluator_c,
+        # "faithfulness": evaluator_f,
+        # "relevancy": evaluator_r,
+        # "semantic_similarity": evaluator_s,
+    }
+    batch_runner = BatchEvalRunner(evaluator_dict, workers=2, show_progress=True)
+
+    eval_results = await batch_runner.aevaluate_responses(
+        queries=eval_qs[:max_samples],
+        responses=pred_responses[:max_samples],
+        reference=ref_response_strs[:max_samples],
+    )
+
+    # results_df = get_results_df(
+    #     [eval_results, base_eval_results],
+    #     ["Sentence Window Retriever", "Base Retriever"],
+    #     ["correctness", "relevancy", "faithfulness", "semantic_similarity"],
+    # )
+    # display(results_df)
+
+    results_df = get_results_df(
+        [eval_results],
+        ["Sentence Window Retriever"],
+        ["correctness"],
+    )
+    print(results_df)
 
 
 async def main():
@@ -224,12 +263,20 @@ async def main():
     conversation = schema.Conversation(**conv_args)
     send_chan, recv_chan = anyio.create_memory_object_stream(100)
     callback_handler = ChatCallbackHandler(send_chan)
-    # chat_engine = await get_chat_engine(callback_handler, conversation)
+    chat_engine, doc_id_to_index = await get_chat_engine(callback_handler, conversation, return_doc_id_to_index=True)
+
+    # print(f"doc_id_to_index: {doc_id_to_index}\n")
+    # [print(f"{key}: {value}") for key, value in doc_id_to_index.items()]
+
+    # index = doc_id_to_index[str(doc.id)]
+    # print(f"index: {index}")
     
     # response = chat_engine.query("Tell me about the company's finances")
     # response = chat_engine.query("Tell me about the company's management")
     # print(f"################## FINAL RESPONSE ##################\n{response}\n")
     # pprint_sentence_window(response, node=4)
+
+
 
     node_parser = get_tool_service_context(callback_handlers=[callback_handler], return_node_parser=True)
     nodes = get_nodes(doc, node_parser)
@@ -242,11 +289,11 @@ async def main():
         service_context=service_context,
     )
     
-    evaluate(
-        document=doc,
-        service_context=service_context,
+    index = doc_id_to_index[str(doc.id)]
+    await evaluate(
+        index=index,
         eval_dataset=eval_dataset,
-
+        max_samples=2,
     )
 
 

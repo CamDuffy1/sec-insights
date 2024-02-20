@@ -307,6 +307,7 @@ def get_tool_service_context(
 async def get_chat_engine(
     callback_handler: BaseCallbackHandler,
     conversation: ConversationSchema,
+    return_doc_id_to_index = False,
 ) -> OpenAIAgent:
     service_context = get_tool_service_context([callback_handler])
     s3_fs = get_s3_fs()
@@ -402,5 +403,8 @@ Any questions about company-related financials or other metrics should be asked 
         callback_manager=service_context.callback_manager,
         max_function_calls=3,
     )
+    
+    if return_doc_id_to_index:
+        return chat_engine, doc_id_to_index
 
     return chat_engine
