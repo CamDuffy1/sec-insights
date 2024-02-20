@@ -35,7 +35,7 @@ from llama_index.vector_stores.types import (
     MetadataFilters,
     ExactMatchFilter,
 )
-# from llama_index.node_parser import SentenceSplitter
+from llama_index.node_parser import SentenceSplitter
 from llama_index.node_parser import SentenceWindowNodeParser
 from llama_index.indices.postprocessor import MetadataReplacementPostProcessor
 from llama_index.indices.postprocessor import SentenceTransformerRerank
@@ -264,6 +264,7 @@ def get_chat_history(
 
 def get_tool_service_context(
     callback_handlers: List[BaseCallbackHandler],
+    node_parser_type: str = "setence-window",
     return_node_parser: bool = False
 ) -> ServiceContext:
     llm = OpenAI(
@@ -278,18 +279,25 @@ def get_tool_service_context(
         model_type=OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002,
         api_key=settings.OPENAI_API_KEY,
     )
-    # # Use a smaller chunk size to retrieve more granular results
-    # node_parser = SentenceSplitter.from_defaults(
-    #     chunk_size=NODE_PARSER_CHUNK_SIZE,
-    #     chunk_overlap=NODE_PARSER_CHUNK_OVERLAP,
-    #     callback_manager=callback_manager,
-    # )
-    node_parser = SentenceWindowNodeParser.from_defaults(
+    # Use a smaller chunk size to retrieve more granular results
+    node_parser_original = SentenceSplitter.from_defaults(
+        chunk_size=NODE_PARSER_CHUNK_SIZE,
+        chunk_overlap=NODE_PARSER_CHUNK_OVERLAP,
+        callback_manager=callback_manager,
+    )
+    node_parser_sentence_window = SentenceWindowNodeParser.from_defaults(
         window_size=3,
         window_metadata_key="window",
         original_text_metadata_key="original_text",
         callback_manager=callback_manager,
     )
+
+    # Node Parse objects do not parse nodes upon instantiation
+    if node_parser_type == "setence-window":
+        node_parser = node_parser_sentence_window
+    elif node_parser_type == "original":
+        node_parser = node_parser_original
+
     service_context = ServiceContext.from_defaults(
         callback_manager=callback_manager,
         llm=llm,
@@ -403,7 +411,8 @@ Any questions about company-related financials or other metrics should be asked 
         callback_manager=service_context.callback_manager,
         max_function_calls=3,
     )
-    
+
+    # Adding capability to return the VectorStoreIndex so it can be used in eval script
     if return_doc_id_to_index:
         return chat_engine, doc_id_to_index
 

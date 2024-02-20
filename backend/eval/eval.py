@@ -7,6 +7,7 @@ from app import schema
 import requests
 import anyio
 from typing import List
+from llama_index import StorageContext, load_index_from_storage
 from llama_index.schema import Document as LlamaIndexDocument
 from llama_index.schema import TextNode
 from llama_index import ServiceContext
@@ -184,6 +185,7 @@ async def generate_dataset(nodes: List[TextNode], service_context: ServiceContex
         The QueryResponseDataset object of the evaluation dataset.
     '''
     if not os.path.exists(file_path):
+        print("Generating evaluation dataset")
         sample_eval_nodes = random.sample(nodes[500:1500], num_nodes_eval)
 
         dataset_generator = DatasetGenerator(
@@ -201,55 +203,136 @@ async def generate_dataset(nodes: List[TextNode], service_context: ServiceContex
         eval_dataset = QueryResponseDataset.from_json(file_path)
     return eval_dataset
 
-async def evaluate(index: VectorStoreIndex, eval_dataset: QueryResponseDataset, max_samples: int = 2):
+async def evaluate(nodes_original: List[TextNode], index_sentence_window: VectorStoreIndex, eval_dataset: QueryResponseDataset, max_samples: int = 2):
+    '''
+    Evaluate responses based on the following metrics:
+        Correctness:            The correctness of a response - A score between 1 (worst) and 5 (best).
+        Semantic Similarity:    The similarity between embeddings of the generated answer and reference answer.
+        Relevance:              The relevance of retrieved context and response to the query. Considers the query string, retrieved context, and response string.
+        Faithfulness:           How well the response is supported by the retrieved context (i.e., Is there hallucination?)
+    Saves the evaluation in csv format at: /workspaces/sec-insights/backend/eval/results.csv
+    Args:
+        nodes_original(List[TextNode]):
+            Nodes parsed using the original NodeParser from SEC-Insights. These nodes are used to 
+            These nodes are used to create a baseline index for comparing the performance of other RAG configurations.
+        index_sentence_window(VectorStoreIndex):
+            The VectorStoreIndex created using the sentence-window node parser.
+        eval_dataset(QueryResponseDataset):
+            The Query Response dataset containing query-resposne pairs used to evaluate performance.
+        max_samples(int):
+            The number of queries to use from the Query Response dataset to evaluate performance.
+    Returns:
+        results_df(DataFrame): Pandas DataFrame containing the evaluated response metrics.
+            
+    Note - The following code snippet had to be added to the CorrectnessEvaluator class within the llama-index v"0.9.7" package at llama_index/evaluation/correctness.py before line: score_str, reasoning_str = eval_response.split("\n", 1)
+    This avoids an error where eval_resonse is created beginning with a newline character, resulting in an error trying to convert an empty str to a float on line: score = float(score_str).
+    Code snippet:
+        print(f"eval_response: {eval_response}\n")
+        if eval_response[0] == '\n':
+            print("removing newline")
+            eval_response = eval_response[1:]
+            print(f"updated eval_response: {eval_response}\n")            
+    '''
     evaluator_c = CorrectnessEvaluator()
-    # evaluator_s = SemanticSimilarityEvaluator()
-    # evaluator_r = RelevancyEvaluator(llm=OpenAI(model="gpt-4"))
-    # evaluator_f = FaithfulnessEvaluator(llm=OpenAI(model="gpt-4"))
-    # pairwise_evaluator = PairwiseComparisonEvaluator(llm=OpenAI(model="gpt-4"))
+    evaluator_s = SemanticSimilarityEvaluator()
+    evaluator_r = RelevancyEvaluator()
+    evaluator_f = FaithfulnessEvaluator()
+    # pairwise_evaluator = PairwiseComparisonEvaluator()
 
     eval_qs = eval_dataset.questions
     ref_response_strs = [r for (_, r) in eval_dataset.qr_pairs]
 
-    query_engine = index.as_query_engine(
+    PERSIST_DIR = '/workspaces/sec-insights/backend/eval/storage'           # local dir to store original index for evaluation commparison
+    if not os.path.exists(PERSIST_DIR):                                     # check if storage already exists
+        index_original = VectorStoreIndex(nodes_original)                   # create the index
+        index_original.storage_context.persist(persist_dir=PERSIST_DIR)     # store it for later
+    else:
+        storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)     # lead the existing index
+        index_original = load_index_from_storage(storage_context)
+
+    query_engine_original = index_original.as_query_engine(                 # construct base query engine (for comparison)
+        similarity_top_k=2
+    )
+    query_engine_sentence_window = index_sentence_window.as_query_engine(   # construct sentence window query engine
         similarity_top_k=2,
         node_postprocessors=[
             MetadataReplacementPostProcessor(target_metadata_key="window")
         ],
     )
 
-    pred_responses = get_responses(
-        eval_qs[:max_samples], query_engine, show_progress=True
+    pred_responses_original = get_responses(
+        eval_qs[:max_samples], query_engine_original, show_progress=True
     )
-    pred_response_strs = [str(p) for p in pred_responses]
+    pred_responses_sentence_window = get_responses(
+        eval_qs[:max_samples], query_engine_sentence_window, show_progress=True
+    )
+
+    pred_responses_original_strs = [str(p) for p in pred_responses_original]
+    pred_responses_sentence_window_strs = [str(p) for p in pred_responses_sentence_window]
 
     evaluator_dict = {
         "correctness": evaluator_c,
-        # "faithfulness": evaluator_f,
-        # "relevancy": evaluator_r,
-        # "semantic_similarity": evaluator_s,
+        "faithfulness": evaluator_f,
+        "relevancy": evaluator_r,
+        "semantic_similarity": evaluator_s,
     }
     batch_runner = BatchEvalRunner(evaluator_dict, workers=2, show_progress=True)
 
-    eval_results = await batch_runner.aevaluate_responses(
+    # '''Generate output for troublshooting'''
+    # queries=eval_qs[:max_samples],
+    # print("############### ORIGINAL RETRIEVER ############### ")
+    # print("############### QUERIES ############### ")
+    # for i in queries:
+    #     print(f"type: {type(i)} query: {i}")
+    # print()
+    # print("############### RESPONSES ############### ")
+    # for j in pred_responses_original:
+    #     print(f"type: {type(j)} query: {j}")
+    # print()
+    # print("############### REFERENCE RESPONSE STRINGS ############### ")
+    # for k in ref_response_strs:
+    #     print(f"type: {type(k)} query: {k}")
+    # print()
+
+    # print("############### SENTENCE WINDOW RETRIEVER ############### ")
+    # print("############### QUERIES ############### ")
+    # for l in queries:
+    #     print(f"type: {type(l)} query: {l}")
+    # print()
+    # print("############### RESPONSES ############### ")
+    # for m in pred_responses_sentence_window:
+    #     print(f"type: {type(m)} query: {m}")
+    # print()
+    # print("############### REFERENCE RESPONSE STRINGS ############### ")
+    # for n in ref_response_strs:
+    #     print(f"type: {type(n)} query: {n}")
+    # print()
+    
+    print(f"################# EVALUATING RESPONSES FROM ORIGINAL RETRIEVER #################")
+    eval_results_original = await batch_runner.aevaluate_responses(
         queries=eval_qs[:max_samples],
-        responses=pred_responses[:max_samples],
+        responses=pred_responses_original[:max_samples],
         reference=ref_response_strs[:max_samples],
     )
 
-    # results_df = get_results_df(
-    #     [eval_results, base_eval_results],
-    #     ["Sentence Window Retriever", "Base Retriever"],
-    #     ["correctness", "relevancy", "faithfulness", "semantic_similarity"],
-    # )
-    # display(results_df)
+    print(f"\n################# EVALUATING RESPONSES FROM SENTENCE WINDOW RETRIEVER #################")
+    eval_results_sentence_window = await batch_runner.aevaluate_responses(
+        queries=eval_qs[:max_samples],
+        responses=pred_responses_sentence_window[:max_samples],
+        reference=ref_response_strs[:max_samples],
+    )
 
     results_df = get_results_df(
-        [eval_results],
-        ["Sentence Window Retriever"],
-        ["correctness"],
+        [eval_results_sentence_window, eval_results_original],
+        ["Sentence Window Retriever", "Base Retriever"],
+        ["correctness", "relevancy", "faithfulness", "semantic_similarity"],
     )
     print(results_df)
+
+    OUTPUT_PATH = '/workspaces/sec-insights/backend/eval/results.csv'
+    results_df.to_csv(OUTPUT_PATH, index=False)
+
+    return results_df
 
 
 async def main():
@@ -265,46 +348,38 @@ async def main():
     callback_handler = ChatCallbackHandler(send_chan)
     chat_engine, doc_id_to_index = await get_chat_engine(callback_handler, conversation, return_doc_id_to_index=True)
 
-    # print(f"doc_id_to_index: {doc_id_to_index}\n")
-    # [print(f"{key}: {value}") for key, value in doc_id_to_index.items()]
-
-    # index = doc_id_to_index[str(doc.id)]
-    # print(f"index: {index}")
-    
     # response = chat_engine.query("Tell me about the company's finances")
     # response = chat_engine.query("Tell me about the company's management")
     # print(f"################## FINAL RESPONSE ##################\n{response}\n")
     # pprint_sentence_window(response, node=4)
 
+    node_parser_original = get_tool_service_context(callback_handlers=[callback_handler], node_parser_type="original", return_node_parser=True)
+    nodes_original = get_nodes(doc, node_parser_original)
 
-
-    node_parser = get_tool_service_context(callback_handlers=[callback_handler], return_node_parser=True)
-    nodes = get_nodes(doc, node_parser)
+    node_parser_sentence_window = get_tool_service_context(callback_handlers=[callback_handler], node_parser_type="setence-window", return_node_parser=True)
+    nodes_sentence_window = get_nodes(doc, node_parser_sentence_window)
 
     service_context = get_tool_service_context(callback_handlers=[callback_handler])
     eval_dataset = await generate_dataset(
         file_path="/workspaces/sec-insights/backend/eval/eval_dataset.json",
-        nodes=nodes,
-        num_nodes_eval=5,
+        nodes=nodes_sentence_window,
+        num_nodes_eval=20,
         service_context=service_context,
     )
     
-    index = doc_id_to_index[str(doc.id)]
-    await evaluate(
-        index=index,
+    index_sentence_window = doc_id_to_index[str(doc.id)]
+    results_df = await evaluate(
+        nodes_original=nodes_original,
+        index_sentence_window=index_sentence_window,
         eval_dataset=eval_dataset,
-        max_samples=2,
+        max_samples=20,
     )
-
 
     return
 
 
 
 if __name__ == "__main__":
-
     asyncio.run(main())
-    # nest_asyncio.apply()
-
 
 
