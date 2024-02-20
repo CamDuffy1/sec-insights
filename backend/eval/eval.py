@@ -1,93 +1,42 @@
 import os
-import asyncio
 import numpy as np
-from trulens_eval import (
-    Tru,
-    Feedback,
-    TruLlama,
-    OpenAI
-)
-from trulens_eval.feedback import Groundedness
-from trulens_eval.feedback.provider.hugs import Huggingface
-
-from app.chat.engine import get_chat_engine
-from app.chat.messaging import (
-    StreamedMessage,
-    StreamedMessageSubProcess,
-    ChatCallbackHandler,
-    handle_chat_message
-)
-from app.api.endpoints.conversation import (
-    create_conversation,
-    get_conversation
-)
+import asyncio
+from app.chat.engine import get_chat_engine, get_tool_service_context, fetch_and_read_document, index_to_query_engine, build_doc_id_to_index_map
+from app.chat.messaging import ChatCallbackHandler
 from app import schema
 import requests
-from app.api.deps import get_db
-from llama_index.callbacks.base import BaseCallbackHandler, CallbackManager
 import anyio
+from typing import List
+from llama_index import StorageContext, load_index_from_storage
+from llama_index.schema import Document as LlamaIndexDocument
+from llama_index.schema import TextNode
+from llama_index import ServiceContext
+from llama_index.node_parser.text.sentence_window import SentenceWindowNodeParser
+from llama_index.response.schema import Response
+from llama_index.indices.vector_store.base import VectorStoreIndex
+from llama_index.indices.postprocessor import MetadataReplacementPostProcessor
+import nest_asyncio
+from tqdm.asyncio import tqdm_asyncio
+import random
+from llama_index.evaluation import (
+    DatasetGenerator,
+    QueryResponseDataset,
+    CorrectnessEvaluator,
+    SemanticSimilarityEvaluator,
+    RelevancyEvaluator,
+    FaithfulnessEvaluator,
+    PairwiseComparisonEvaluator,
+    BatchEvalRunner
+)
+from llama_index.evaluation.eval_utils import (
+    get_responses,
+    get_results_df
+)
+from collections import defaultdict
+import pandas as pd
+# from IPython.display import display
+from llama_index.llms.openai import OpenAI
 
-
-# absolute path of text file containing questions for evaluation
-file_path = '/workspaces/sec-insights/backend/eval/eval_questions.txt'
-
-def get_eval_questions(file_path):
-    eval_questions = []
-    with open(file_path, 'r') as file:
-        for line in file:
-            # Remove newline character and convert to integer
-            item = line.strip()
-            eval_questions.append(item)
-    return eval_questions
-
-def run_evals(eval_questions, tru_recorder, query_engine):
-    for question in eval_questions:
-        with tru_recorder as recording:
-            response = query_engine.query(question)
-
-def get_trulens_recorder_openai(query_engine, app_id):
-    openai = OpenAI()
-
-    qa_relevance = (
-        Feedback(openai.relevance_with_cot_reasons, name="Answer Relevance")
-        .on_input_output()
-    )
-
-    qs_relevance = (
-        Feedback(openai.relevance_with_cot_reasons, name = "Context Relevance")
-        .on_input()
-        .on(TruLlama.select_source_nodes().node.text)
-        .aggregate(np.mean)
-    )
-
-    grounded = Groundedness(groundedness_provider=openai)
-
-    groundedness = (
-        Feedback(grounded.groundedness_measure_with_cot_reasons, name="Groundedness")
-            .on(TruLlama.select_source_nodes().node.text)
-            .on_output()
-            .aggregate(grounded.grounded_statements_aggregator)
-    )
-
-    feedbacks = [qa_relevance, qs_relevance, groundedness]
-    tru_recorder = TruLlama(
-        query_engine,
-        app_id=app_id,
-        feedbacks=feedbacks
-    )
-    return tru_recorder
-
-def get_trulens_recorder_huggingface(query_engine, app_id):
-    huggingface = Huggingface()
-    feedback = Feedback(huggingface.language_match).on_input_output()
-    feedbacks = [feedback]
-    
-    tru_recorder = TruLlama(
-        query_engine,
-        app_id=app_id,
-        feedbacks=feedbacks
-    )
-    return tru_recorder
 
 def create_conversation_via_api(document_ids):
     '''
@@ -176,31 +125,255 @@ def get_dummy_doc():
     doc = schema.Document(**doc_args)
     return doc
 
+def format_pdf_text(text):
+    # Replace tabs and multiple new lines with a single space
+    if text != None:
+        text = text.replace("\t", " ")
+        text = text.replace("\n", " ")
+        text = " ".join(text.split())
+    return text
+
+def pprint_sentence_window(response: Response, node: int = None) -> None:
+    '''
+    Function to pretty print the setence-window context vs the original setence retrieved.
+    Args:
+        response (Resonse): llama_index.response.schema.Response object
+        node (int): The node to print sentence-window vs original sentence for. Use when only want to print for a single node.
+    Returns: None
+    '''
+    if node != None:
+        print(f"################## SOURCE NODE {node} ##################")
+        window = format_pdf_text(response.source_nodes[node].node.metadata.get("window"))
+        sentence = format_pdf_text(response.source_nodes[node].node.metadata.get("original_text"))
+        print(f"WINDOW: {window}")
+        print("------------------")
+        print(f"ORIGINAL SENTENCE: {sentence}")
+        return
+    else:
+        for i in range(len(response.source_nodes)):
+            print(f"\n################## SOURCE NODE {i+1} ##################")
+            window = format_pdf_text(response.source_nodes[i].node.metadata.get("window"))
+            sentence = format_pdf_text(response.source_nodes[i].node.metadata.get("original_text"))
+            print(f"WINDOW: {window}")
+            print("------------------")
+            print(f"ORIGINAL SENTENCE: {sentence}")
+
+def get_nodes(document: LlamaIndexDocument, node_parser: SentenceWindowNodeParser):
+
+    document = fetch_and_read_document(document)
+    nodes = node_parser.get_nodes_from_documents(document)
+
+    '''Code to get some visibility into nodes'''
+    # print(f"Total nodes: {len(nodes)}")
+    # for i in range(800, 830):
+    #     print(f"NODE {i} TEXT: {format_pdf_text(nodes[i].text)}")
+    #     print(f"NODE {i} WINDOW: {format_pdf_text(nodes[i].metadata.get('window'))}")
+
+    return nodes
+
+async def generate_dataset(nodes: List[TextNode], service_context: ServiceContext, num_nodes_eval: int = 2, file_path: str = '/workspaces/sec-insights/backend/eval/eval_dataset.json') -> QueryResponseDataset:
+    '''
+    Generate a dataset to be used for evaluation.
+    Check if dataset already exists at file_path. If not, generate it and save it there so it does not
+    need to be generated again.
+    Args:
+        nodes (List[TextNode]): Text nodes from the document being used for evaluation.
+        service_context (ServiceContext): The LlamaIndex Service Context to use to generate questions from nodes for the evaluation dataset.
+        num_nodes_eval (int): The number of nodes (randomly sampled from total nodes) to use for generating evaluation questions.
+        file_path (str): The path to save the evaluation dataset file so it does not have to be created again.
+    Returns:
+        The QueryResponseDataset object of the evaluation dataset.
+    '''
+    if not os.path.exists(file_path):
+        print("Generating evaluation dataset")
+        sample_eval_nodes = random.sample(nodes[500:1500], num_nodes_eval)
+
+        dataset_generator = DatasetGenerator(
+            nodes=sample_eval_nodes,
+            # llm=OpenAI(model="gpt-4"),
+            service_context=service_context,
+            num_questions_per_chunk=2,
+            show_progress=True,
+        )
+        eval_dataset = await dataset_generator.agenerate_dataset_from_nodes()
+        eval_dataset.save_json("/workspaces/sec-insights/backend/eval/eval_dataset.json")
+        print(f"Saved evaluation dataset at: {file_path}")
+    else:
+        print(f"Evaluation dataset already exists at: {file_path}")
+        eval_dataset = QueryResponseDataset.from_json(file_path)
+    return eval_dataset
+
+async def evaluate(nodes_original: List[TextNode], index_sentence_window: VectorStoreIndex, eval_dataset: QueryResponseDataset, max_samples: int = 2):
+    '''
+    Evaluate responses based on the following metrics:
+        Correctness:            The correctness of a response - A score between 1 (worst) and 5 (best).
+        Semantic Similarity:    The similarity between embeddings of the generated answer and reference answer.
+        Relevance:              The relevance of retrieved context and response to the query. Considers the query string, retrieved context, and response string.
+        Faithfulness:           How well the response is supported by the retrieved context (i.e., Is there hallucination?)
+    Saves the evaluation in csv format at: /workspaces/sec-insights/backend/eval/results.csv
+    Args:
+        nodes_original(List[TextNode]):
+            Nodes parsed using the original NodeParser from SEC-Insights. These nodes are used to 
+            These nodes are used to create a baseline index for comparing the performance of other RAG configurations.
+        index_sentence_window(VectorStoreIndex):
+            The VectorStoreIndex created using the sentence-window node parser.
+        eval_dataset(QueryResponseDataset):
+            The Query Response dataset containing query-resposne pairs used to evaluate performance.
+        max_samples(int):
+            The number of queries to use from the Query Response dataset to evaluate performance.
+    Returns:
+        results_df(DataFrame): Pandas DataFrame containing the evaluated response metrics.
+            
+    Note - The following code snippet had to be added to the CorrectnessEvaluator class within the llama-index v"0.9.7" package at llama_index/evaluation/correctness.py before line: score_str, reasoning_str = eval_response.split("\n", 1)
+    This avoids an error where eval_resonse is created beginning with a newline character, resulting in an error trying to convert an empty str to a float on line: score = float(score_str).
+    Code snippet:
+        print(f"eval_response: {eval_response}\n")
+        if eval_response[0] == '\n':
+            print("removing newline")
+            eval_response = eval_response[1:]
+            print(f"updated eval_response: {eval_response}\n")            
+    '''
+    evaluator_c = CorrectnessEvaluator()
+    evaluator_s = SemanticSimilarityEvaluator()
+    evaluator_r = RelevancyEvaluator()
+    evaluator_f = FaithfulnessEvaluator()
+    # pairwise_evaluator = PairwiseComparisonEvaluator()
+
+    eval_qs = eval_dataset.questions
+    ref_response_strs = [r for (_, r) in eval_dataset.qr_pairs]
+
+    PERSIST_DIR = '/workspaces/sec-insights/backend/eval/storage'           # local dir to store original index for evaluation commparison
+    if not os.path.exists(PERSIST_DIR):                                     # check if storage already exists
+        index_original = VectorStoreIndex(nodes_original)                   # create the index
+        index_original.storage_context.persist(persist_dir=PERSIST_DIR)     # store it for later
+    else:
+        storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)     # lead the existing index
+        index_original = load_index_from_storage(storage_context)
+
+    query_engine_original = index_original.as_query_engine(                 # construct base query engine (for comparison)
+        similarity_top_k=2
+    )
+    query_engine_sentence_window = index_sentence_window.as_query_engine(   # construct sentence window query engine
+        similarity_top_k=2,
+        node_postprocessors=[
+            MetadataReplacementPostProcessor(target_metadata_key="window")
+        ],
+    )
+
+    pred_responses_original = get_responses(
+        eval_qs[:max_samples], query_engine_original, show_progress=True
+    )
+    pred_responses_sentence_window = get_responses(
+        eval_qs[:max_samples], query_engine_sentence_window, show_progress=True
+    )
+
+    pred_responses_original_strs = [str(p) for p in pred_responses_original]
+    pred_responses_sentence_window_strs = [str(p) for p in pred_responses_sentence_window]
+
+    evaluator_dict = {
+        "correctness": evaluator_c,
+        "faithfulness": evaluator_f,
+        "relevancy": evaluator_r,
+        "semantic_similarity": evaluator_s,
+    }
+    batch_runner = BatchEvalRunner(evaluator_dict, workers=2, show_progress=True)
+
+    # '''Generate output for troublshooting'''
+    # queries=eval_qs[:max_samples],
+    # print("############### ORIGINAL RETRIEVER ############### ")
+    # print("############### QUERIES ############### ")
+    # for i in queries:
+    #     print(f"type: {type(i)} query: {i}")
+    # print()
+    # print("############### RESPONSES ############### ")
+    # for j in pred_responses_original:
+    #     print(f"type: {type(j)} query: {j}")
+    # print()
+    # print("############### REFERENCE RESPONSE STRINGS ############### ")
+    # for k in ref_response_strs:
+    #     print(f"type: {type(k)} query: {k}")
+    # print()
+
+    # print("############### SENTENCE WINDOW RETRIEVER ############### ")
+    # print("############### QUERIES ############### ")
+    # for l in queries:
+    #     print(f"type: {type(l)} query: {l}")
+    # print()
+    # print("############### RESPONSES ############### ")
+    # for m in pred_responses_sentence_window:
+    #     print(f"type: {type(m)} query: {m}")
+    # print()
+    # print("############### REFERENCE RESPONSE STRINGS ############### ")
+    # for n in ref_response_strs:
+    #     print(f"type: {type(n)} query: {n}")
+    # print()
+    
+    print(f"################# EVALUATING RESPONSES FROM ORIGINAL RETRIEVER #################")
+    eval_results_original = await batch_runner.aevaluate_responses(
+        queries=eval_qs[:max_samples],
+        responses=pred_responses_original[:max_samples],
+        reference=ref_response_strs[:max_samples],
+    )
+
+    print(f"\n################# EVALUATING RESPONSES FROM SENTENCE WINDOW RETRIEVER #################")
+    eval_results_sentence_window = await batch_runner.aevaluate_responses(
+        queries=eval_qs[:max_samples],
+        responses=pred_responses_sentence_window[:max_samples],
+        reference=ref_response_strs[:max_samples],
+    )
+
+    results_df = get_results_df(
+        [eval_results_sentence_window, eval_results_original],
+        ["Sentence Window Retriever", "Base Retriever"],
+        ["correctness", "relevancy", "faithfulness", "semantic_similarity"],
+    )
+    print(results_df)
+
+    OUTPUT_PATH = '/workspaces/sec-insights/backend/eval/results.csv'
+    results_df.to_csv(OUTPUT_PATH, index=False)
+
+    return results_df
+
 
 async def main():
     
-    # doc = get_document_via_api(document_id="4d24de4e-63ee-4af5-9c97-ccae008ad887")
-    doc = get_dummy_doc()
+    doc = get_document_via_api(document_id="fbadfd55-17e5-4d67-a6a1-cfe00043c7a0")
+    # doc = get_dummy_doc()
     conv_args = {
         "messages": [],
         "documents": [doc]
     }
     conversation = schema.Conversation(**conv_args)
     send_chan, recv_chan = anyio.create_memory_object_stream(100)
-    chat_engine = await get_chat_engine(ChatCallbackHandler(send_chan), conversation)
+    callback_handler = ChatCallbackHandler(send_chan)
+    chat_engine, doc_id_to_index = await get_chat_engine(callback_handler, conversation, return_doc_id_to_index=True)
+
+    # response = chat_engine.query("Tell me about the company's finances")
+    # response = chat_engine.query("Tell me about the company's management")
+    # print(f"################## FINAL RESPONSE ##################\n{response}\n")
+    # pprint_sentence_window(response, node=4)
+
+    node_parser_original = get_tool_service_context(callback_handlers=[callback_handler], node_parser_type="original", return_node_parser=True)
+    nodes_original = get_nodes(doc, node_parser_original)
+
+    node_parser_sentence_window = get_tool_service_context(callback_handlers=[callback_handler], node_parser_type="setence-window", return_node_parser=True)
+    nodes_sentence_window = get_nodes(doc, node_parser_sentence_window)
+
+    service_context = get_tool_service_context(callback_handlers=[callback_handler])
+    eval_dataset = await generate_dataset(
+        file_path="/workspaces/sec-insights/backend/eval/eval_dataset.json",
+        nodes=nodes_sentence_window,
+        num_nodes_eval=20,
+        service_context=service_context,
+    )
     
-    response = chat_engine.query("Tell me about the business")
-    print(response)
-
-    # eval_questions = get_eval_questions(file_path)
-    # Tru().reset_database()
-    # # tru_recorder_1 = get_trulens_recorder_openai(chat_engine, app_id="base_engine_1")
-    # tru_recorder_1 = get_trulens_recorder_huggingface(chat_engine, app_id="base_engine_1")
-    # run_evals(eval_questions, tru_recorder_1, chat_engine)
-    
-    # Tru().run_dashboard()
-
-
+    index_sentence_window = doc_id_to_index[str(doc.id)]
+    results_df = await evaluate(
+        nodes_original=nodes_original,
+        index_sentence_window=index_sentence_window,
+        eval_dataset=eval_dataset,
+        max_samples=20,
+    )
 
     return
 
@@ -208,12 +381,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
-
-
-
-
-
-
 
 

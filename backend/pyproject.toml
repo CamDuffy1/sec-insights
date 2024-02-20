@@ -33,6 +33,7 @@ cachetools = "^5.3.1"
 greenlet = "^2.0.2"
 email-validator = "^2.0.0.post2"
 trulens-eval = "0.17.0"
+sentence-transformers = "2.3.1"
 
 
 [tool.poetry.group.dev.dependencies]
