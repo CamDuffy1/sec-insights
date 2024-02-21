@@ -8,8 +8,11 @@ packages = [{include = "app"}]
 
 [tool.poetry.dependencies]
 python = "^3.10,<3.12"
+# python = ">=3.11,<3.12"
 fastapi = "0.100.1"
-pydantic = "^1.10.8"
+# fastapi = "0.109.2"
+# pydantic = "^1.10.8"
+pydantic = "2.6.1"
 uvicorn = "^0.22.0"
 sqlalchemy = {extras = ["async"], version = "^2.0.15"}
 aiosqlite = "^0.19.0"
@@ -26,13 +29,21 @@ pdfkit = "^1.0.0"
 pgvector = "^0.1.8"
 sentry-sdk = {extras = ["fastapi"], version = "^1.28.1"}
 llama-index = "0.9.7"
+# llama-index = "0.10.4"
 polygon = "^1.1.0"
 polygon-api-client = "^1.12.3"
 nltk = "^3.8.1"
 cachetools = "^5.3.1"
 greenlet = "^2.0.2"
 email-validator = "^2.0.0.post2"
-trulens-eval = "0.17.0"
+# trulens-eval = "0.17.0"
+trulens-eval = "0.22.2"
+bump-pydantic = "0.8.0"
+# pydantic-settings = "2.1.0"
+# openai = "1.12.0"
+# openai = "0.28.1"
+# openai = "1.5.0"
+# openai = "1.1.0"
 
 
 [tool.poetry.group.dev.dependencies]
