@@ -203,7 +203,7 @@ async def generate_dataset(nodes: List[TextNode], service_context: ServiceContex
         eval_dataset = QueryResponseDataset.from_json(file_path)
     return eval_dataset
 
-async def evaluate(nodes_original: List[TextNode], index_sentence_window: VectorStoreIndex, eval_dataset: QueryResponseDataset, max_samples: int = 2):
+async def evaluate(original_nodes: List[TextNode], sentence_window_index: VectorStoreIndex, eval_dataset: QueryResponseDataset, max_samples: int = 2):
     '''
     Evaluate responses based on the following metrics:
         Correctness:            The correctness of a response - A score between 1 (worst) and 5 (best).
@@ -212,10 +212,10 @@ async def evaluate(nodes_original: List[TextNode], index_sentence_window: Vector
         Faithfulness:           How well the response is supported by the retrieved context (i.e., Is there hallucination?)
     Saves the evaluation in csv format at: /workspaces/sec-insights/backend/eval/results.csv
     Args:
-        nodes_original(List[TextNode]):
+        original_nodes(List[TextNode]):
             Nodes parsed using the original NodeParser from SEC-Insights. These nodes are used to 
             These nodes are used to create a baseline index for comparing the performance of other RAG configurations.
-        index_sentence_window(VectorStoreIndex):
+        sentence_window_index(VectorStoreIndex):
             The VectorStoreIndex created using the sentence-window node parser.
         eval_dataset(QueryResponseDataset):
             The Query Response dataset containing query-resposne pairs used to evaluate performance.
@@ -244,7 +244,7 @@ async def evaluate(nodes_original: List[TextNode], index_sentence_window: Vector
 
     PERSIST_DIR = '/workspaces/sec-insights/backend/eval/storage'           # local dir to store original index for evaluation commparison
     if not os.path.exists(PERSIST_DIR):                                     # check if storage already exists
-        index_original = VectorStoreIndex(nodes_original)                   # create the index
+        index_original = VectorStoreIndex(original_nodes)                   # create the index
         index_original.storage_context.persist(persist_dir=PERSIST_DIR)     # store it for later
     else:
         storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)     # lead the existing index
@@ -253,7 +253,7 @@ async def evaluate(nodes_original: List[TextNode], index_sentence_window: Vector
     query_engine_original = index_original.as_query_engine(                 # construct base query engine (for comparison)
         similarity_top_k=2
     )
-    query_engine_sentence_window = index_sentence_window.as_query_engine(   # construct sentence window query engine
+    query_engine_sentence_window = sentence_window_index.as_query_engine(   # construct sentence window query engine
         similarity_top_k=2,
         node_postprocessors=[
             MetadataReplacementPostProcessor(target_metadata_key="window")
@@ -353,27 +353,43 @@ async def main():
     # print(f"################## FINAL RESPONSE ##################\n{response}\n")
     # pprint_sentence_window(response, node=4)
 
-    node_parser_original = get_tool_service_context(callback_handlers=[callback_handler], node_parser_type="original", return_node_parser=True)
-    nodes_original = get_nodes(doc, node_parser_original)
+    document = fetch_and_read_document(doc)     # merges document pages into a single document
 
-    node_parser_sentence_window = get_tool_service_context(callback_handlers=[callback_handler], node_parser_type="setence-window", return_node_parser=True)
-    nodes_sentence_window = get_nodes(doc, node_parser_sentence_window)
+    original_service_context, original_node_parser = get_tool_service_context(callback_handlers=[callback_handler], node_parser_type="original", return_node_parser=True)
+    # original_node_parser = original_service_context.node_parser
+    # original_nodes = original_node_parser.get_nodes_from_documents(document)
+    
+    # original_nodes = get_nodes(doc, original_node_parser)
+    original_nodes = original_node_parser.get_nodes_from_documents(document)
 
-    service_context = get_tool_service_context(callback_handlers=[callback_handler])
+    sentence_window_service_context, sentence_window_node_parser = get_tool_service_context(callback_handlers=[callback_handler], node_parser_type="setence-window", return_node_parser=True)
+    # nodes_sentence_window = get_nodes(doc, sentence_window_node_parser)
+    nodes_sentence_window = sentence_window_node_parser.get_nodes_from_documents(document)
+
+    hierarchical_service_context, hierarchical_node_parser = get_tool_service_context(callback_handlers=[callback_handler], node_parser_type="hierarchical", return_node_parser=True)
+    hierarchical_nodes = hierarchical_node_parser.get_nodes_from_documents(document)
+    leaf_nodes = get_leaf_nodes(hierarchical_nodes)
+
+    # service_context = get_tool_service_context(callback_handlers=[callback_handler])
     eval_dataset = await generate_dataset(
         file_path="/workspaces/sec-insights/backend/eval/eval_dataset.json",
         nodes=nodes_sentence_window,
         num_nodes_eval=20,
-        service_context=service_context,
+        # service_context=service_context,
+        service_context=original_service_context,
     )
     
-    index_sentence_window = doc_id_to_index[str(doc.id)]
-    results_df = await evaluate(
-        nodes_original=nodes_original,
-        index_sentence_window=index_sentence_window,
-        eval_dataset=eval_dataset,
-        max_samples=20,
-    )
+    # # sentence_window_index = doc_id_to_index[str(doc.id)]
+    # sentence_window_index = VectorStoreIndex.from_documents(
+    #     document, service_context=service_context
+    # )
+
+    # results_df = await evaluate(
+    #     original_nodes=original_nodes,
+    #     sentence_window_index=sentence_window_index,
+    #     eval_dataset=eval_dataset,
+    #     max_samples=20,
+    # )
 
     return
 

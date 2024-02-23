@@ -35,8 +35,8 @@ from llama_index.vector_stores.types import (
     MetadataFilters,
     ExactMatchFilter,
 )
-from llama_index.node_parser import SentenceSplitter
-from llama_index.node_parser import SentenceWindowNodeParser
+from llama_index.node_parser import SentenceSplitter, SentenceWindowNodeParser, HierarchicalNodeParser, get_leaf_nodes
+# from llama_index.node_parser import SentenceWindowNodeParser
 from llama_index.indices.postprocessor import MetadataReplacementPostProcessor
 from llama_index.indices.postprocessor import SentenceTransformerRerank
 import sys
@@ -81,25 +81,6 @@ def get_s3_fs() -> AsyncFileSystem:
     if not (settings.RENDER or s3.exists(settings.S3_BUCKET_NAME)):
         s3.mkdir(settings.S3_BUCKET_NAME)
     return s3
-
-
-# def fetch_and_read_document(
-#     document: DocumentSchema,
-# ) -> List[LlamaIndexDocument]:
-#     # Super hacky approach to get this to feature complete on time.
-#     # TODO: Come up with better abstractions for this and the other methods in this module.
-#     with TemporaryDirectory() as temp_dir:
-#         temp_file_path = Path(temp_dir) / f"{str(document.id)}.pdf"
-#         with open(temp_file_path, "wb") as temp_file:
-#             with requests.get(document.url, stream=True) as r:
-#                 r.raise_for_status()
-#                 for chunk in r.iter_content(chunk_size=8192):
-#                     temp_file.write(chunk)
-#             temp_file.seek(0)
-#             reader = PDFReader()
-#             return reader.load_data(
-#                 temp_file_path, extra_info={DB_DOC_ID_KEY: str(document.id)}
-#             )
         
 def fetch_and_read_document(
     document: DocumentSchema,
@@ -132,8 +113,6 @@ def fetch_and_read_document(
         merged_document = LlamaIndexDocument(text="\n\n".join([doc.text for doc in documents]), extra_info={DB_DOC_ID_KEY: str(document.id)})
 
         return [merged_document]    # Return a single merged document within a list, for compatibility with pre-existing code
-          
-
 
 def build_description_for_document(document: DocumentSchema) -> str:
     if DocumentMetadataKeysEnum.SEC_DOCUMENT in document.metadata_map:
@@ -291,10 +270,15 @@ def get_tool_service_context(
         original_text_metadata_key="original_text",
         callback_manager=callback_manager,
     )
+    node_parser_hierarchical = HierarchicalNodeParser.from_defaults(
+        chunk_sizes=[2048, 512, 128]
+    )
 
     # Node Parse objects do not parse nodes upon instantiation
     if node_parser_type == "setence-window":
         node_parser = node_parser_sentence_window
+    elif node_parser_type == "hierarchical":
+        node_parser = node_parser_hierarchical
     elif node_parser_type == "original":
         node_parser = node_parser_original
 
@@ -307,7 +291,7 @@ def get_tool_service_context(
 
     # Adding capability to return the node parser so it can be used in eval script
     if return_node_parser:
-        return node_parser
+        return service_context, node_parser
 
     return service_context
 
