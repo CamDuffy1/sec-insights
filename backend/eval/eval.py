@@ -164,10 +164,10 @@ def get_nodes(document: LlamaIndexDocument, node_parser: SentenceWindowNodeParse
     nodes = node_parser.get_nodes_from_documents(document)
 
     '''Code to get some visibility into nodes'''
-    # print(f"Total nodes: {len(nodes)}")
-    # for i in range(800, 830):
-    #     print(f"NODE {i} TEXT: {format_pdf_text(nodes[i].text)}")
-    #     print(f"NODE {i} WINDOW: {format_pdf_text(nodes[i].metadata.get('window'))}")
+    print(f"Total nodes: {len(nodes)}")
+    for i in range(800, 830):
+        print(f"NODE {i} TEXT: {format_pdf_text(nodes[i].text)}")
+        print(f"NODE {i} WINDOW: {format_pdf_text(nodes[i].metadata.get('window'))}")
 
     return nodes
 
