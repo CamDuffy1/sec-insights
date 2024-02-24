@@ -247,11 +247,11 @@ async def evaluate(original_nodes: List[TextNode], sentence_window_index: Vector
         index_original = VectorStoreIndex(original_nodes)                   # create the index
         index_original.storage_context.persist(persist_dir=PERSIST_DIR)     # store it for later
     else:
-        storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)     # lead the existing index
+        storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)     # load the existing index
         index_original = load_index_from_storage(storage_context)
 
     query_engine_original = index_original.as_query_engine(                 # construct base query engine (for comparison)
-        similarity_top_k=2
+        similarity_top_k=3
     )
     query_engine_sentence_window = sentence_window_index.as_query_engine(   # construct sentence window query engine
         similarity_top_k=2,

@@ -37,8 +37,7 @@ from llama_index.vector_stores.types import (
 )
 from llama_index.node_parser import SentenceSplitter, SentenceWindowNodeParser, HierarchicalNodeParser, get_leaf_nodes
 # from llama_index.node_parser import SentenceWindowNodeParser
-from llama_index.indices.postprocessor import MetadataReplacementPostProcessor
-from llama_index.indices.postprocessor import SentenceTransformerRerank
+from llama_index.indices.postprocessor import MetadataReplacementPostProcessor, SentenceTransformerRerank
 import sys
 
 from app.core.config import settings
@@ -128,24 +127,36 @@ def build_description_for_document(document: DocumentSchema) -> str:
     return "A document containing useful information that the user pre-selected to discuss with the assistant."
 
 
-def index_to_query_engine(doc_id: str, index: VectorStoreIndex) -> BaseQueryEngine:
-    '''
-    top_n=4 & similarity_top_k=8 observed to give better results than 
-    top_n=6 & similarity_top_k=6
-    i.e., Less often saw response like "could not find relevant context"
-    '''
-    filters = MetadataFilters(
-        filters=[ExactMatchFilter(key=DB_DOC_ID_KEY, value=doc_id)]
-    )
-    postproc = MetadataReplacementPostProcessor(
-        target_metadata_key="window"
-    )
-    rerank = SentenceTransformerRerank(
-        model="cross-encoder/ms-marco-MiniLM-L-2-v2",
-        top_n=4
-    )
-    kwargs = {"similarity_top_k": 8, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
-    return index.as_query_engine(**kwargs)
+
+
+def index_to_query_engine(doc_id: str, index: VectorStoreIndex, type: str = "setence-window") -> BaseQueryEngine:
+    if type == "original":
+        filters = MetadataFilters(
+            filters=[ExactMatchFilter(key=DB_DOC_ID_KEY, value=doc_id)]
+        )
+        kwargs = {"similarity_top_k": 3, "filters": filters}
+        return index.as_query_engine(**kwargs)
+    elif type == "setence-window":
+        '''
+        top_n=4 & similarity_top_k=8 observed to give better results than 
+        top_n=6 & similarity_top_k=6
+        i.e., Less often saw response like "could not find relevant context"
+        '''
+        filters = MetadataFilters(
+            filters=[ExactMatchFilter(key=DB_DOC_ID_KEY, value=doc_id)]
+        )
+        postproc = MetadataReplacementPostProcessor(
+            target_metadata_key="window"
+        )
+        rerank = SentenceTransformerRerank(
+            model="cross-encoder/ms-marco-MiniLM-L-2-v2",
+            top_n=4
+        )
+        kwargs = {"similarity_top_k": 8, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
+        return index.as_query_engine(**kwargs)
+    elif type == "auto-merging":
+        return
+
 
 
 @cached(
@@ -258,29 +269,26 @@ def get_tool_service_context(
         model_type=OpenAIEmbeddingModelType.TEXT_EMBED_ADA_002,
         api_key=settings.OPENAI_API_KEY,
     )
-    # Use a smaller chunk size to retrieve more granular results
-    node_parser_original = SentenceSplitter.from_defaults(
-        chunk_size=NODE_PARSER_CHUNK_SIZE,
-        chunk_overlap=NODE_PARSER_CHUNK_OVERLAP,
-        callback_manager=callback_manager,
-    )
-    node_parser_sentence_window = SentenceWindowNodeParser.from_defaults(
-        window_size=3,
-        window_metadata_key="window",
-        original_text_metadata_key="original_text",
-        callback_manager=callback_manager,
-    )
-    node_parser_hierarchical = HierarchicalNodeParser.from_defaults(
-        chunk_sizes=[2048, 512, 128]
-    )
 
-    # Node Parse objects do not parse nodes upon instantiation
-    if node_parser_type == "setence-window":
-        node_parser = node_parser_sentence_window
+    if node_parser_type == "original":
+        # Use a smaller chunk size to retrieve more granular results
+        node_parser = SentenceSplitter.from_defaults(
+            chunk_size=NODE_PARSER_CHUNK_SIZE,
+            chunk_overlap=NODE_PARSER_CHUNK_OVERLAP,
+            callback_manager=callback_manager,
+        )
+    elif node_parser_type == "setence-window":
+        node_parser = SentenceWindowNodeParser.from_defaults(
+            window_size=3,
+            window_metadata_key="window",
+            original_text_metadata_key="original_text",
+            callback_manager=callback_manager,
+        )
+
     elif node_parser_type == "hierarchical":
-        node_parser = node_parser_hierarchical
-    elif node_parser_type == "original":
-        node_parser = node_parser_original
+        node_parser = HierarchicalNodeParser.from_defaults(
+            chunk_sizes=[2048, 512, 128]
+        )
 
     service_context = ServiceContext.from_defaults(
         callback_manager=callback_manager,
