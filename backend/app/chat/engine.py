@@ -254,7 +254,7 @@ def get_chat_history(
 
 def get_tool_service_context(
     callback_handlers: List[BaseCallbackHandler],
-    node_parser_type: str = "setence-window",
+    node_parser_type: str = "sentence-window",
     return_node_parser: bool = False
 ) -> ServiceContext:
     llm = OpenAI(
@@ -277,14 +277,13 @@ def get_tool_service_context(
             chunk_overlap=NODE_PARSER_CHUNK_OVERLAP,
             callback_manager=callback_manager,
         )
-    elif node_parser_type == "setence-window":
+    elif node_parser_type == "sentence-window":
         node_parser = SentenceWindowNodeParser.from_defaults(
             window_size=3,
             window_metadata_key="window",
             original_text_metadata_key="original_text",
             callback_manager=callback_manager,
         )
-
     elif node_parser_type == "hierarchical":
         node_parser = HierarchicalNodeParser.from_defaults(
             chunk_sizes=[2048, 512, 128]

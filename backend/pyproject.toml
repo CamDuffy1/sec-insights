@@ -35,6 +35,7 @@ email-validator = "^2.0.0.post2"
 # trulens-eval = "0.17.0"
 ipykernel = "6.29.2"
 python-dotenv = "1.0.1"
+nest-asyncio = "1.6.0"
 
 
 [tool.poetry.group.dev.dependencies]
