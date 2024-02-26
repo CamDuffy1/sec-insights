@@ -29,15 +29,16 @@ from llama_index.embeddings.openai import (
 from llama_index.llms.base import MessageRole
 from llama_index.callbacks.base import BaseCallbackHandler, CallbackManager
 from llama_index.tools import QueryEngineTool, ToolMetadata
-from llama_index.query_engine import SubQuestionQueryEngine
+from llama_index.query_engine import SubQuestionQueryEngine, RetrieverQueryEngine
 from llama_index.indices.query.base import BaseQueryEngine
 from llama_index.vector_stores.types import (
     MetadataFilters,
     ExactMatchFilter,
 )
+
+from llama_index.retrievers import AutoMergingRetriever
 from llama_index.node_parser import SentenceSplitter, SentenceWindowNodeParser, HierarchicalNodeParser, get_leaf_nodes
-# from llama_index.node_parser import SentenceWindowNodeParser
-from llama_index.indices.postprocessor import MetadataReplacementPostProcessor, SentenceTransformerRerank
+from llama_index.indices.postprocessor import MetadataReplacementPostProcessor, LLMRerank
 import sys
 
 from app.core.config import settings
@@ -127,9 +128,7 @@ def build_description_for_document(document: DocumentSchema) -> str:
     return "A document containing useful information that the user pre-selected to discuss with the assistant."
 
 
-
-
-def index_to_query_engine(doc_id: str, index: VectorStoreIndex, type: str = "setence-window") -> BaseQueryEngine:
+def index_to_query_engine(service_context, doc_id: str, index: VectorStoreIndex, type: str = "setence-window") -> BaseQueryEngine:
     if type == "original":
         filters = MetadataFilters(
             filters=[ExactMatchFilter(key=DB_DOC_ID_KEY, value=doc_id)]
@@ -146,15 +145,25 @@ def index_to_query_engine(doc_id: str, index: VectorStoreIndex, type: str = "set
             filters=[ExactMatchFilter(key=DB_DOC_ID_KEY, value=doc_id)]
         )
         postproc = MetadataReplacementPostProcessor(
-            target_metadata_key="window"
+            target_metadata_key="window",
         )
-        rerank = SentenceTransformerRerank(
-            model="cross-encoder/ms-marco-MiniLM-L-2-v2",
-            top_n=4
+        rerank = LLMRerank(
+            top_n=3,
+            service_context=service_context,
         )
-        kwargs = {"similarity_top_k": 8, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
+        kwargs = {"similarity_top_k": 7, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
         return index.as_query_engine(**kwargs)
     elif type == "auto-merging":
+        auto_merging_storage_context = StorageContext.from_defaults()
+        
+        base_retriever = index.as_retriever(
+            similarity_top_k=12,
+        )
+        auto_merging_retriever = AutoMergingRetriever(
+            base_retriever,
+        )
+        
+        
         return
 
 
@@ -319,7 +328,7 @@ async def get_chat_engine(
 
     vector_query_engine_tools = [
         QueryEngineTool(
-            query_engine=index_to_query_engine(doc_id, index),
+            query_engine=index_to_query_engine(service_context, doc_id, index),
             metadata=ToolMetadata(
                 name=doc_id,
                 description=build_description_for_document(id_to_doc[doc_id]),
