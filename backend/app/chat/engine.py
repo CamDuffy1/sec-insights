@@ -37,8 +37,8 @@ from llama_index.vector_stores.types import (
 )
 from llama_index.node_parser import SentenceSplitter
 from llama_index.node_parser import SentenceWindowNodeParser
-from llama_index.indices.postprocessor import MetadataReplacementPostProcessor
-from llama_index.indices.postprocessor import SentenceTransformerRerank
+from llama_index.indices.postprocessor import MetadataReplacementPostProcessor, LLMRerank
+
 import sys
 
 from app.core.config import settings
@@ -149,7 +149,7 @@ def build_description_for_document(document: DocumentSchema) -> str:
     return "A document containing useful information that the user pre-selected to discuss with the assistant."
 
 
-def index_to_query_engine(doc_id: str, index: VectorStoreIndex) -> BaseQueryEngine:
+def index_to_query_engine(service_context, doc_id: str, index: VectorStoreIndex) -> BaseQueryEngine:
     '''
     top_n=4 & similarity_top_k=8 observed to give better results than 
     top_n=6 & similarity_top_k=6
@@ -161,9 +161,9 @@ def index_to_query_engine(doc_id: str, index: VectorStoreIndex) -> BaseQueryEngi
     postproc = MetadataReplacementPostProcessor(
         target_metadata_key="window"
     )
-    rerank = SentenceTransformerRerank(
-        model="cross-encoder/ms-marco-MiniLM-L-2-v2",
-        top_n=4
+    rerank = LLMRerank(
+        top_n=4,
+        service_context=service_context,
     )
     kwargs = {"similarity_top_k": 8, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
     return index.as_query_engine(**kwargs)
@@ -328,7 +328,7 @@ async def get_chat_engine(
 
     vector_query_engine_tools = [
         QueryEngineTool(
-            query_engine=index_to_query_engine(doc_id, index),
+            query_engine=index_to_query_engine(service_context, doc_id, index),
             metadata=ToolMetadata(
                 name=doc_id,
                 description=build_description_for_document(id_to_doc[doc_id]),
