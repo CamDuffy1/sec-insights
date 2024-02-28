@@ -39,7 +39,7 @@ class BaseMetadataObject(BaseModel):
 class Citation(BaseMetadataObject):
     document_id: UUID
     text: str
-    page_number: int
+    # page_number: int
     score: Optional[float]
 
     @validator("document_id")
@@ -51,12 +51,12 @@ class Citation(BaseMetadataObject):
     @classmethod
     def from_node(cls, node_w_score: NodeWithScore) -> "Citation":
         node: BaseNode = node_w_score.node
-        page_number = int(node.source_node.metadata["page_label"])
+        # page_number = int(node.source_node.metadata["page_label"])
         document_id = node.source_node.metadata[DB_DOC_ID_KEY]
         return cls(
             document_id=document_id,
             text=node.get_content(),
-            page_number=page_number,
+            # page_number=page_number,
             score=node_w_score.score,
         )
 

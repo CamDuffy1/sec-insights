@@ -1,0 +1,3 @@
+names,correctness,relevancy,faithfulness,semantic_similarity
+Sentence Window Retriever,3.875,0.95,1.0,0.9742194155159869
+Base Retriever,3.875,0.9,0.95,0.965627478649799

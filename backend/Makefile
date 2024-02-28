@@ -83,4 +83,19 @@ seed_db_local:
 	docker compose create db
 	docker compose start db
 	make setup_localstack
-	python scripts/seed_db.py --ciks '["0001018724", "1326801"]'  --filing_types '["10-K"]'
+	# python scripts/seed_db.py --ciks '["0001018724", "1326801"]'  --filing_types '["10-K"]'
+	python scripts/seed_db.py --ciks '["1326801"]'  --filing_types '["10-K"]'		# only populate with Meta doc
+
+refresh:
+	echo "Stopping and deleting all docker containers"
+	docker stop $(docker ps -aq) && docker rm $(docker ps -aq)
+	echo: "docker compose create"
+	docker compose create
+	echo "make setup_localstack"
+	make setup_localstack
+	echo "make migrate"
+	make migrate
+	echo "make seed_db_local"
+	make seed_db_local
+	echo "make migrate"
+	make migrate
