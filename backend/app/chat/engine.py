@@ -148,10 +148,10 @@ def index_to_query_engine(service_context, doc_id: str, index: VectorStoreIndex,
             target_metadata_key="window",
         )
         rerank = LLMRerank(
-            top_n=3,
+            top_n=4,
             service_context=service_context,
         )
-        kwargs = {"similarity_top_k": 7, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
+        kwargs = {"similarity_top_k": 8, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
         return index.as_query_engine(**kwargs)
     elif type == "auto-merging":
         auto_merging_storage_context = StorageContext.from_defaults()
@@ -295,7 +295,8 @@ def get_tool_service_context(
         )
     elif node_parser_type == "hierarchical":
         node_parser = HierarchicalNodeParser.from_defaults(
-            chunk_sizes=[2048, 512, 128]
+            chunk_sizes=[2048, 512, 128],
+            callback_manager=callback_manager,
         )
 
     service_context = ServiceContext.from_defaults(
