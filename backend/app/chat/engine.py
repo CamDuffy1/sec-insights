@@ -162,10 +162,10 @@ def index_to_query_engine(service_context, doc_id: str, index: VectorStoreIndex)
         target_metadata_key="window"
     )
     rerank = LLMRerank(
-        top_n=4,
+        top_n=3,
         service_context=service_context,
     )
-    kwargs = {"similarity_top_k": 8, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
+    kwargs = {"similarity_top_k": 4, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
     return index.as_query_engine(**kwargs)
 
 
@@ -286,7 +286,7 @@ def get_tool_service_context(
         callback_manager=callback_manager,
     )
     node_parser_sentence_window = SentenceWindowNodeParser.from_defaults(
-        window_size=3,
+        window_size=2,
         window_metadata_key="window",
         original_text_metadata_key="original_text",
         callback_manager=callback_manager,

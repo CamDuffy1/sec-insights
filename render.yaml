@@ -41,7 +41,7 @@ services:
     runtime: docker
     repo: https://github.com/CamDuffy1/sec-insights.git
     region: oregon
-    plan: pro
+    plan: pro plus
     rootDir: ./backend
     # set to the fake date of Feb 31st so it never runs. Meant to be manually triggered.
     schedule: "0 5 31 2 ?"
