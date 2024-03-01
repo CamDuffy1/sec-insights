@@ -148,7 +148,7 @@ def index_to_query_engine(service_context, doc_id: str, index: VectorStoreIndex,
             target_metadata_key="window",
         )
         rerank = LLMRerank(
-            top_n=4,
+            top_n=3,
             service_context=service_context,
         )
         kwargs = {"similarity_top_k": 8, "filters": filters, "node_postprocessors": [postproc, rerank]}    # add node_postprocessors here; increase similarity top_k
@@ -288,7 +288,7 @@ def get_tool_service_context(
         )
     elif node_parser_type == "sentence-window":
         node_parser = SentenceWindowNodeParser.from_defaults(
-            window_size=3,
+            window_size=2,
             window_metadata_key="window",
             original_text_metadata_key="original_text",
             callback_manager=callback_manager,
@@ -299,16 +299,13 @@ def get_tool_service_context(
             callback_manager=callback_manager,
         )
 
+    print(f"{'#'*25} CREATING SERVICE CONTEXT USING {node_parser_type} NODE PARSER {'#'*25}")
     service_context = ServiceContext.from_defaults(
         callback_manager=callback_manager,
         llm=llm,
         embed_model=embedding_model,
         node_parser=node_parser,
     )
-
-    # Adding capability to return the node parser so it can be used in eval script
-    if return_node_parser:
-        return service_context, node_parser
 
     return service_context
 
@@ -340,7 +337,7 @@ async def get_chat_engine(
 
     response_synth = get_custom_response_synth(service_context, conversation.documents)
 
-    qualitative_question_engine = SubQuestionQueryEngine.from_defaults(
+    qualitative_question_engine = SubQuestionQueryEngine.from_dePfaults(
         query_engine_tools=vector_query_engine_tools,
         service_context=service_context,
         response_synthesizer=response_synth,
