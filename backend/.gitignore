@@ -164,3 +164,5 @@ storage/
 volume/
 
 eval/index_storage/
+eval/node_storage/
+eval/document_storage/

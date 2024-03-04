@@ -337,7 +337,7 @@ async def get_chat_engine(
 
     response_synth = get_custom_response_synth(service_context, conversation.documents)
 
-    qualitative_question_engine = SubQuestionQueryEngine.from_dePfaults(
+    qualitative_question_engine = SubQuestionQueryEngine.from_defaults(
         query_engine_tools=vector_query_engine_tools,
         service_context=service_context,
         response_synthesizer=response_synth,
