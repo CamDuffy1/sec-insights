@@ -1,0 +1,4 @@
+names,correctness,relevancy,faithfulness,semantic_similarity
+Base Retriever,3.975,1.0,1.0,0.9598964763623854
+Sentence-Window Retriever,4.075,1.0,0.95,0.9657191354220108
+Auto-Merging Retriever,4.05,1.0,1.0,0.9658025483753129

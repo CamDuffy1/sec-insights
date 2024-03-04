@@ -31,6 +31,7 @@ from llama_index.callbacks.base import BaseCallbackHandler, CallbackManager
 from llama_index.tools import QueryEngineTool, ToolMetadata
 from llama_index.query_engine import SubQuestionQueryEngine, RetrieverQueryEngine
 from llama_index.indices.query.base import BaseQueryEngine
+from llama_index.indices.prompt_helper import PromptHelper
 from llama_index.vector_stores.types import (
     MetadataFilters,
     ExactMatchFilter,
@@ -68,8 +69,11 @@ logger = logging.getLogger(__name__)
 logger.info("Applying nested asyncio patch")
 nest_asyncio.apply()
 
-OPENAI_TOOL_LLM_NAME = "gpt-3.5-turbo-0613"
-OPENAI_CHAT_LLM_NAME = "gpt-3.5-turbo-0613"
+# OPENAI_TOOL_LLM_NAME = "gpt-3.5-turbo-0613"
+# OPENAI_CHAT_LLM_NAME = "gpt-3.5-turbo-0613"
+
+OPENAI_TOOL_LLM_NAME = "gpt-3.5-turbo"
+OPENAI_CHAT_LLM_NAME = "gpt-3.5-turbo"
 
 
 def get_s3_fs() -> AsyncFileSystem:
@@ -299,12 +303,17 @@ def get_tool_service_context(
             callback_manager=callback_manager,
         )
 
+    prompt_helper = PromptHelper(
+        context_window=8192,            # Increase size of context window from default=4096 -- Sentence-Window retrieval often exceeds this
+    )
+
     print(f"{'#'*25} CREATING SERVICE CONTEXT USING {node_parser_type} NODE PARSER {'#'*25}")
     service_context = ServiceContext.from_defaults(
         callback_manager=callback_manager,
         llm=llm,
         embed_model=embedding_model,
         node_parser=node_parser,
+        prompt_helper=prompt_helper
     )
 
     return service_context
